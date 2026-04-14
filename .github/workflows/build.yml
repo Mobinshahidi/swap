@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-apk:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout repository
@@ -28,7 +28,9 @@ jobs:
             unzip \
             openjdk-17-jdk \
             autoconf \
+            automake \
             libtool \
+            libtool-bin \
             pkg-config \
             zlib1g-dev \
             libncurses5-dev \
@@ -42,9 +44,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .buildozer
-          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec', '.github/workflows/build.yml') }}
+          key: ${{ runner.os }}-ubuntu22-p4a2024.1.21-buildozer-${{ hashFiles('buildozer.spec', '.github/workflows/build.yml') }}
           restore-keys: |
-            ${{ runner.os }}-buildozer-
+            ${{ runner.os }}-ubuntu22-p4a2024.1.21-buildozer-
+
+      - name: Remove stale libffi build cache
+        run: rm -rf .buildozer/android/platform/build-*/build/other_builds/libffi*
 
       - name: Install Buildozer and Cython
         run: |
