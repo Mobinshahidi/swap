@@ -1,133 +1,76 @@
-name: Build Android APK
+name: Build APK
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 jobs:
-  build-apk:
-    runs-on: ubuntu-22.04
-    env:
-      ACLOCAL_PATH: /usr/share/aclocal
+  build:
+    runs-on: ubuntu-22.04   # 22.04 is more stable for Buildozer than latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Install system dependencies
         run: |
-          sudo apt-get update
+          sudo apt-get update -qq
           sudo apt-get install -y \
-            git \
-            zip \
-            unzip \
+            git zip unzip \
             openjdk-17-jdk \
-            autoconf \
-            automake \
-            gettext \
-            libtool \
-            libtool-bin \
-            libltdl-dev \
-            pkg-config \
-            zlib1g-dev \
-            libncurses5-dev \
-            libncursesw5-dev \
-            cmake \
-            libffi-dev \
-            libssl-dev
-          sudo apt-get install -y libtinfo5 || sudo apt-get install -y libtinfo6
+            autoconf libtool pkg-config \
+            zlib1g-dev libncurses5-dev libncursesw5-dev \
+            cmake libffi-dev libssl-dev \
+            libltdl-dev libgdbm-dev libbz2-dev \
+            python3-pip build-essential \
+            ccache
 
-      - name: Cache Buildozer directory
+      - name: Set JAVA_HOME to Java 17
+        run: |
+          echo "JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))" >> $GITHUB_ENV
+          java -version
+
+      - name: Cache Buildozer global directory
+        uses: actions/cache@v4
+        with:
+          path: ~/.buildozer
+          key: buildozer-global-${{ hashFiles('buildozer.spec') }}
+          restore-keys: buildozer-global-
+
+      - name: Cache .buildozer build directory
         uses: actions/cache@v4
         with:
           path: .buildozer
-          key: ${{ runner.os }}-ubuntu22-p4a2024.1.21-buildozer-${{ hashFiles('buildozer.spec', '.github/workflows/build.yml') }}
-          restore-keys: |
-            ${{ runner.os }}-ubuntu22-p4a2024.1.21-buildozer-
-
-      - name: Remove stale libffi build cache
-        run: rm -rf .buildozer/android/platform/build-*/build/other_builds/libffi*
+          key: buildozer-local-${{ hashFiles('buildozer.spec') }}-${{ hashFiles('main.py') }}
+          restore-keys: buildozer-local-
 
       - name: Install Buildozer and Cython
         run: |
-          python -m pip install --upgrade pip
-          pip install buildozer==1.5.0 cython==0.29.36
+          pip install --upgrade pip
+          pip install buildozer cython
 
-      - name: Show autotools versions
+      - name: Build APK
         run: |
-          autoconf --version | head -n 1
-          automake --version | head -n 1
-          libtoolize --version | head -n 1
+          buildozer android debug 2>&1 | tee build.log
+          echo "=== Last 50 lines of build log ==="
+          tail -50 build.log
 
-      - name: Force stable python-for-android
-        run: |
-          python -m pip show python-for-android || true
-          pip uninstall -y python-for-android || true
-          pip install "python-for-android==2024.1.21"
-          python -m pip show python-for-android
-
-      - name: Build APK (debug)
-        run: |
-          set -o pipefail
-          buildozer -v android debug 2>&1 | tee buildozer-ci.log
-
-      - name: Print likely failure lines
-        if: failure()
-        run: |
-          python - <<'PY'
-          import re
-          from pathlib import Path
-
-          p = Path("buildozer-ci.log")
-          if not p.exists():
-              print("buildozer-ci.log not found")
-              raise SystemExit(0)
-
-          lines = p.read_text(errors="replace").splitlines()
-          patterns = [
-              re.compile(r"(^|\b)(error|failed|exception|traceback)(\b|:)", re.I),
-              re.compile(r"libffi", re.I),
-          ]
-          hits = [i for i, line in enumerate(lines) if any(p.search(line) for p in patterns)]
-
-          print("---- Diagnostic extract from buildozer-ci.log ----")
-          if not hits:
-              start = max(0, len(lines) - 200)
-              for line in lines[start:]:
-                  print(line)
-          else:
-              shown = set()
-              for idx in hits[-20:]:
-                  for j in range(max(0, idx - 3), min(len(lines), idx + 4)):
-                      if j not in shown:
-                          print(lines[j])
-                          shown.add(j)
-                  print("-")
-          print("---- End diagnostic extract ----")
-          PY
-
-      - name: Upload build logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-logs
-          path: |
-            buildozer-ci.log
-            .buildozer/**/*.log
-            .buildozer/**/config.log
-          if-no-files-found: warn
-
-      - name: Upload APK artifact
-        if: success()
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: lan-share-apk
           path: bin/*.apk
           if-no-files-found: error
+
+      - name: Upload build log (always, even on failure)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log

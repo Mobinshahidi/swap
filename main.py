@@ -1,28 +1,24 @@
 #!/usr/bin/env python3
 """
-LAN File Share Server
-- Browse folders recursively
-- Download files
-- Multi-select & download as ZIP
-- Upload files into any folder
-- Paste & save text snippets (optional password protection)
-- QR code on start
+LAN Share — Android APK version
+Kivy UI + embedded HTTP file server.
+No Termux required. Works standalone on Android.
 """
 
-import socket
+import io
 import json
 import hashlib
+import html
+import mimetypes
 import secrets
-import io
-import zipfile
+import socket
 import threading
 import webbrowser
+import zipfile
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
-from urllib.parse import unquote, urlparse, parse_qs
-import mimetypes
-import html
+from urllib.parse import parse_qs, unquote, urlparse
 
 from kivy.app import App
 from kivy.clock import Clock
@@ -33,28 +29,33 @@ from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivy.utils import platform
 
-
+# ── Platform-aware shared folder ──────────────────────────────────────────────
 def get_share_dir() -> Path:
     if platform == "android":
-        from android.storage import primary_external_storage_path
-
-        return Path(primary_external_storage_path()) / "LanShare"
+        try:
+            from android.storage import primary_external_storage_path  # type: ignore
+            return Path(primary_external_storage_path()) / "LanShare"
+        except Exception:
+            pass
+        # Fallback: use app-private files dir (always writable)
+        from android import mActivity  # type: ignore
+        ctx = mActivity.getApplicationContext()
+        return Path(str(ctx.getExternalFilesDir(None))) / "LanShare"
     return Path.home() / "LanShare"
 
 
-# -- Config --------------------------------------------------------------------
 SHARE_DIR = get_share_dir()
-PASSWD_DB = SHARE_DIR / ".passwords.json"  # hidden file, stores hashed passwords
-PORT = 1390
+PASSWD_DB = SHARE_DIR / ".passwords.json"
+PORT      = 1390
 
 
-# -- Server --------------------------------------------------------------------
+# ── HTTP Server ───────────────────────────────────────────────────────────────
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
-    daemon_threads = True
+    daemon_threads    = True
     allow_reuse_address = True
 
 
-# -- Helpers -------------------------------------------------------------------
+# ── Helpers ───────────────────────────────────────────────────────────────────
 def get_local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
@@ -74,52 +75,21 @@ def human_size(n):
     return f"{n:.1f} TB"
 
 
-def print_qr(url):
-    try:
-        import qrcode
-
-        qr = qrcode.QRCode(border=1)
-        qr.add_data(url)
-        qr.make(fit=True)
-        qr.print_ascii(invert=True)
-    except ImportError:
-        print("  (Install qrcode for QR:  pip install qrcode)\n")
-
-
 def get_icon(name):
     ext = Path(name).suffix.lower()
     icons = {
-        ".jpg": "🖼️",
-        ".jpeg": "🖼️",
-        ".png": "🖼️",
-        ".gif": "🖼️",
-        ".webp": "🖼️",
-        ".heic": "🖼️",
-        ".mp4": "🎬",
-        ".mov": "🎬",
-        ".avi": "🎬",
-        ".mkv": "🎬",
-        ".mp3": "🎵",
-        ".wav": "🎵",
-        ".flac": "🎵",
-        ".m4a": "🎵",
-        ".pdf": "📄",
-        ".doc": "📝",
-        ".docx": "📝",
-        ".txt": "📃",
-        ".zip": "🗜️",
-        ".tar": "🗜️",
-        ".gz": "🗜️",
-        ".rar": "🗜️",
-        ".py": "🐍",
-        ".js": "📜",
-        ".html": "🌐",
-        ".css": "🎨",
+        ".jpg": "🖼️", ".jpeg": "🖼️", ".png": "🖼️", ".gif": "🖼️",
+        ".webp": "🖼️", ".heic": "🖼️",
+        ".mp4": "🎬", ".mov": "🎬", ".avi": "🎬", ".mkv": "🎬",
+        ".mp3": "🎵", ".wav": "🎵", ".flac": "🎵", ".m4a": "🎵",
+        ".pdf": "📄", ".doc": "📝", ".docx": "📝", ".txt": "📃",
+        ".zip": "🗜️", ".tar": "🗜️", ".gz": "🗜️", ".rar": "🗜️",
+        ".py": "🐍", ".js": "📜", ".html": "🌐", ".css": "🎨",
     }
     return icons.get(ext, "📄")
 
 
-# -- Password DB ---------------------------------------------------------------
+# ── Password DB ───────────────────────────────────────────────────────────────
 def hash_password(password: str, salt: str) -> str:
     return hashlib.sha256(f"{salt}{password}".encode()).hexdigest()
 
@@ -136,14 +106,14 @@ def save_passwd_db(db: dict):
 
 
 def set_file_password(rel_path: str, password: str):
-    db = load_passwd_db()
+    db   = load_passwd_db()
     salt = secrets.token_hex(16)
     db[rel_path] = {"salt": salt, "hash": hash_password(password, salt)}
     save_passwd_db(db)
 
 
 def check_file_password(rel_path: str, password: str) -> bool:
-    db = load_passwd_db()
+    db    = load_passwd_db()
     entry = db.get(rel_path)
     if not entry:
         return True
@@ -154,13 +124,7 @@ def is_protected(rel_path: str) -> bool:
     return rel_path in load_passwd_db()
 
 
-def remove_file_password(rel_path: str):
-    db = load_passwd_db()
-    db.pop(rel_path, None)
-    save_passwd_db(db)
-
-
-# -- CSS -----------------------------------------------------------------------
+# ── CSS ───────────────────────────────────────────────────────────────────────
 CSS = """
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -183,8 +147,6 @@ CSS = """
   .header-row { display: flex; align-items: baseline; gap: 0.75rem; }
   header h1 { font-family: var(--mono); font-size: 1.1rem; font-weight: 500; letter-spacing: -0.02em; }
   header .count { font-size: 0.78rem; color: var(--muted); font-family: var(--mono); }
-
-  /* Upload */
   .upload-zone {
     border: 1.5px dashed var(--border); border-radius: var(--radius);
     padding: 2rem; text-align: center; cursor: pointer;
@@ -195,99 +157,64 @@ CSS = """
   .upload-icon { font-size: 1.75rem; margin-bottom: 0.5rem; display: block; }
   .upload-label { font-size: 0.9rem; color: var(--muted); }
   .upload-label strong { color: var(--accent); font-weight: 500; }
-
-  /* Progress */
   #progress-wrap { display: none; margin-bottom: 1rem; background: var(--surface);
     border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem 1.25rem; }
   #progress-label { font-size: 0.8rem; font-family: var(--mono); color: var(--muted); margin-bottom: 0.5rem; }
   #progress-bar-bg { background: var(--border); border-radius: 99px; height: 4px; overflow: hidden; }
   #progress-bar { height: 100%; background: var(--accent); border-radius: 99px; width: 0%; transition: width 0.15s; }
-
-  /* Collapsible card */
-  .card {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius); margin-bottom: 1rem; overflow: hidden;
-  }
-  .card-header {
-    padding: 0.7rem 1.25rem; font-size: 0.75rem; font-family: var(--mono);
+  .card { background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); margin-bottom: 1rem; overflow: hidden; }
+  .card-header { padding: 0.7rem 1.25rem; font-size: 0.75rem; font-family: var(--mono);
     color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase;
     border-bottom: 1px solid var(--border); cursor: pointer;
-    display: flex; justify-content: space-between; align-items: center; user-select: none;
-  }
+    display: flex; justify-content: space-between; align-items: center; user-select: none; }
   .card-header:hover { background: var(--bg); }
   .card-body { padding: 1rem 1.25rem; display: none; }
   .card-body.open { display: block; }
-
-  /* Text paste */
-  #paste-text {
-    width: 100%; min-height: 90px; border: 1px solid var(--border); border-radius: 6px;
+  #paste-text { width: 100%; min-height: 90px; border: 1px solid var(--border); border-radius: 6px;
     padding: 0.75rem; font-family: var(--mono); font-size: 0.82rem;
-    color: var(--text); background: var(--bg); resize: vertical; outline: none;
-    transition: border-color 0.15s;
-  }
-  #paste-text:focus { border-color: var(--accent); }
+    color: var(--text); background: var(--bg); resize: vertical; outline: none; }
   .paste-row { display: flex; gap: 0.5rem; margin-top: 0.75rem; align-items: center; flex-wrap: wrap; }
   .paste-row input[type=text], .paste-row input[type=password] {
     flex: 1; min-width: 100px; border: 1px solid var(--border); border-radius: 6px;
     padding: 0.5rem 0.75rem; font-family: var(--mono); font-size: 0.82rem;
-    color: var(--text); background: var(--bg); outline: none; transition: border-color 0.15s;
-  }
-  .paste-row input:focus { border-color: var(--accent); }
-  .btn {
-    background: var(--accent); color: white; border: none; border-radius: 6px;
+    color: var(--text); background: var(--bg); outline: none; }
+  .btn { background: var(--accent); color: white; border: none; border-radius: 6px;
     padding: 0.5rem 1.1rem; font-family: var(--mono); font-size: 0.82rem;
-    cursor: pointer; white-space: nowrap; transition: opacity 0.15s;
-  }
+    cursor: pointer; white-space: nowrap; transition: opacity 0.15s; }
   .btn:hover { opacity: 0.85; }
   .btn:disabled { opacity: 0.45; cursor: not-allowed; }
   .btn-success { background: var(--success); }
   .hint { font-size: 0.72rem; color: var(--muted); margin-top: 0.5rem; font-family: var(--mono); }
-
-  /* Files */
   .files-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
-  .files-header {
-    padding: 0.75rem 1.25rem; font-size: 0.75rem; font-family: var(--mono); color: var(--muted);
+  .files-header { padding: 0.75rem 1.25rem; font-size: 0.75rem; font-family: var(--mono); color: var(--muted);
     letter-spacing: 0.06em; text-transform: uppercase; border-bottom: 1px solid var(--border);
-    display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;
-  }
+    display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
   .files-header-left { display: flex; align-items: center; gap: 0.6rem; }
-
-  /* Multi-select toolbar */
-  .select-toolbar {
-    display: none; padding: 0.65rem 1.25rem;
+  .select-toolbar { display: none; padding: 0.65rem 1.25rem;
     background: var(--accent-light); border-bottom: 1px solid var(--border);
-    align-items: center; gap: 0.75rem; flex-wrap: wrap;
-  }
+    align-items: center; gap: 0.75rem; flex-wrap: wrap; }
   .select-toolbar.visible { display: flex; }
   .select-toolbar .sel-count { font-family: var(--mono); font-size: 0.8rem; color: var(--accent); flex: 1; }
   .btn-zip { background: var(--success); }
-
-  /* Download queue panel */
-  #queue-panel {
-    display: none; background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius); margin-bottom: 1rem; overflow: hidden;
-  }
+  #queue-panel { display: none; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); margin-bottom: 1rem; overflow: hidden; }
   #queue-panel.visible { display: block; }
-  .queue-header {
-    padding: 0.65rem 1.25rem; font-size: 0.75rem; font-family: var(--mono);
+  .queue-header { padding: 0.65rem 1.25rem; font-size: 0.75rem; font-family: var(--mono);
     color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase;
-    border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;
-  }
+    border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
   .queue-list { padding: 0.5rem 0; }
-  .queue-item {
-    padding: 0.5rem 1.25rem; display: flex; align-items: center; gap: 0.75rem;
-    font-family: var(--mono); font-size: 0.8rem; border-bottom: 1px solid var(--border);
-  }
+  .queue-item { padding: 0.5rem 1.25rem; display: flex; align-items: center; gap: 0.75rem;
+    font-family: var(--mono); font-size: 0.8rem; border-bottom: 1px solid var(--border); }
   .queue-item:last-child { border-bottom: none; }
   .queue-item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .queue-status { font-size: 0.75rem; white-space: nowrap; }
-  .queue-status.pending  { color: var(--muted); }
-  .queue-status.active   { color: var(--accent); }
-  .queue-status.done     { color: var(--success); }
-  .queue-status.error    { color: var(--danger); }
+  .queue-status.pending { color: var(--muted); }
+  .queue-status.active  { color: var(--accent); }
+  .queue-status.done    { color: var(--success); }
+  .queue-status.error   { color: var(--danger); }
   .queue-mini-bar { height: 3px; background: var(--border); border-radius: 99px; overflow: hidden; margin-top: 3px; }
   .queue-mini-fill { height: 100%; background: var(--accent); border-radius: 99px; width: 0%; transition: width 0.15s; }
-
   table { width: 100%; border-collapse: collapse; }
   tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
   tr:last-child { border-bottom: none; }
@@ -303,50 +230,31 @@ CSS = """
   .locked { cursor: pointer; color: var(--text); }
   .locked:hover { color: var(--accent); }
   .empty { padding: 2.5rem; text-align: center; color: var(--muted); font-size: 0.88rem; font-family: var(--mono); }
-
-  /* Select-all checkbox in header */
   #select-all-cb { width: 16px; height: 16px; cursor: pointer; accent-color: var(--accent); }
-
-  /* Password modal */
-  .modal-overlay {
-    display: none; position: fixed; inset: 0;
-    background: rgba(0,0,0,0.35); z-index: 100;
-    align-items: center; justify-content: center;
-  }
+  .modal-overlay { display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.35); z-index: 100; align-items: center; justify-content: center; }
   .modal-overlay.show { display: flex; }
-  .modal {
-    background: var(--surface); border-radius: var(--radius);
-    padding: 1.5rem; width: 90%; max-width: 360px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.15);
-  }
+  .modal { background: var(--surface); border-radius: var(--radius);
+    padding: 1.5rem; width: 90%; max-width: 360px; box-shadow: 0 8px 32px rgba(0,0,0,0.15); }
   .modal h2 { font-family: var(--mono); font-size: 0.95rem; font-weight: 500; margin-bottom: 0.35rem; }
   .modal p  { font-size: 0.8rem; color: var(--muted); margin-bottom: 1rem; font-family: var(--mono); }
-  .modal input {
-    width: 100%; border: 1px solid var(--border); border-radius: 6px;
+  .modal input { width: 100%; border: 1px solid var(--border); border-radius: 6px;
     padding: 0.6rem 0.75rem; font-family: var(--mono); font-size: 0.88rem;
-    background: var(--bg); outline: none; margin-bottom: 0.75rem;
-    transition: border-color 0.15s;
-  }
-  .modal input:focus { border-color: var(--accent); }
+    background: var(--bg); outline: none; margin-bottom: 0.75rem; }
   .modal-error { font-size: 0.78rem; color: var(--danger); font-family: var(--mono);
     margin-bottom: 0.5rem; display: none; }
   .modal-btns { display: flex; gap: 0.5rem; justify-content: flex-end; }
   .btn-cancel { background: var(--border); color: var(--text); border: none; border-radius: 6px;
     padding: 0.5rem 1rem; font-family: var(--mono); font-size: 0.82rem; cursor: pointer; }
-
-  /* Toast */
-  .toast {
-    position: fixed; bottom: 1.5rem; left: 50%;
+  .toast { position: fixed; bottom: 1.5rem; left: 50%;
     transform: translateX(-50%) translateY(80px);
     background: var(--text); color: white; font-size: 0.82rem;
     font-family: var(--mono); padding: 0.6rem 1.2rem; border-radius: 99px;
-    opacity: 0; transition: all 0.3s; pointer-events: none; white-space: nowrap;
-  }
+    opacity: 0; transition: all 0.3s; pointer-events: none; white-space: nowrap; }
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 """
 
-
-# -- JS ------------------------------------------------------------------------
+# ── JS ────────────────────────────────────────────────────────────────────────
 JS = r"""
   const UPLOAD_ENDPOINT = '__UPLOAD__';
   const PASTE_ENDPOINT  = '__PASTE__';
@@ -366,7 +274,6 @@ JS = r"""
     setTimeout(() => t.classList.remove('show'), 2800);
   }
 
-  // -- File upload ---------------------------------------------------------
   async function uploadFiles(files) {
     for (const file of files) {
       const fd = new FormData();
@@ -398,7 +305,6 @@ JS = r"""
     uploadFiles([...e.dataTransfer.files]);
   });
 
-  // -- Collapsible text panel ----------------------------------------------
   document.getElementById('text-header').addEventListener('click', () => {
     const body    = document.getElementById('text-body');
     const chevron = document.getElementById('chevron');
@@ -406,7 +312,6 @@ JS = r"""
     chevron.textContent = body.classList.contains('open') ? '\u25b2' : '\u25bc';
   });
 
-  // -- Save text -----------------------------------------------------------
   document.getElementById('save-text-btn').addEventListener('click', async () => {
     const text     = document.getElementById('paste-text').value.trim();
     const rawName  = document.getElementById('paste-name').value.trim() || 'note';
@@ -425,17 +330,14 @@ JS = r"""
       const icon = password ? '\uD83D\uDD12 ' : '';
       showToast(`Saved ${icon}${filename} \u2713`);
       setTimeout(() => location.reload(), 900);
-    } else {
-      showToast('Save failed');
-    }
+    } else { showToast('Save failed'); }
   });
 
-  // -- Password modal ------------------------------------------------------
-  const modal        = document.getElementById('pw-modal');
-  const modalInput   = document.getElementById('modal-pw-input');
-  const modalError   = document.getElementById('modal-error');
-  const modalFilename= document.getElementById('modal-filename');
-  let   pendingUrl   = null;
+  const modal         = document.getElementById('pw-modal');
+  const modalInput    = document.getElementById('modal-pw-input');
+  const modalError    = document.getElementById('modal-error');
+  const modalFilename = document.getElementById('modal-filename');
+  let   pendingUrl    = null;
 
   function openModal(url, displayName) {
     pendingUrl = url;
@@ -447,10 +349,8 @@ JS = r"""
   }
 
   document.getElementById('modal-cancel').addEventListener('click', () => {
-    modal.classList.remove('show');
-    pendingUrl = null;
+    modal.classList.remove('show'); pendingUrl = null;
   });
-
   modal.addEventListener('click', (e) => {
     if (e.target === modal) { modal.classList.remove('show'); pendingUrl = null; }
   });
@@ -473,19 +373,15 @@ JS = r"""
 
   document.getElementById('modal-submit').addEventListener('click', submitPassword);
   modalInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitPassword(); });
-
   window.promptPassword = (url, name) => openModal(url, name);
 
-  // -- Multi-select --------------------------------------------------------
   const selectAllCb = document.getElementById('select-all-cb');
   const toolbar     = document.getElementById('select-toolbar');
   const selCount    = document.getElementById('sel-count');
   const btnZip      = document.getElementById('btn-zip');
   const btnQueue    = document.getElementById('btn-queue');
 
-  function getCheckboxes() {
-    return [...document.querySelectorAll('.file-cb')];
-  }
+  function getCheckboxes() { return [...document.querySelectorAll('.file-cb')]; }
 
   function getCheckedItems() {
     return getCheckboxes()
@@ -493,25 +389,21 @@ JS = r"""
       .map(cb => ({ name: cb.dataset.name, isDir: cb.dataset.type === 'dir' }));
   }
 
-  function getCheckedNames() {
-    return getCheckedItems().map(i => i.name);
-  }
+  function getCheckedNames() { return getCheckedItems().map(i => i.name); }
 
   function updateToolbar() {
-    const items = getCheckedItems();
-    const n = items.length;
+    const items  = getCheckedItems();
+    const n      = items.length;
     const hasDir = items.some(i => i.isDir);
     if (n > 0) {
       toolbar.classList.add('visible');
       const label = n === 1 ? '1 item selected' : `${n} items selected`;
-      selCount.textContent = label + (hasDir ? ' (folders → ZIP only)' : '');
+      selCount.textContent = label + (hasDir ? ' (folders \u2192 ZIP only)' : '');
       btnZip.disabled   = false;
-      // Queue download only makes sense for files, not folders
       btnQueue.disabled = items.every(i => i.isDir);
     } else {
       toolbar.classList.remove('visible');
     }
-    // Update select-all state
     const all = getCheckboxes();
     selectAllCb.indeterminate = n > 0 && n < all.length;
     selectAllCb.checked = all.length > 0 && n === all.length;
@@ -523,21 +415,14 @@ JS = r"""
   }
 
   document.addEventListener('change', (e) => {
-    if (e.target.classList.contains('file-cb')) {
-      toggleRowHighlight(e.target);
-      updateToolbar();
-    }
+    if (e.target.classList.contains('file-cb')) { toggleRowHighlight(e.target); updateToolbar(); }
   });
 
   selectAllCb && selectAllCb.addEventListener('change', () => {
-    getCheckboxes().forEach(cb => {
-      cb.checked = selectAllCb.checked;
-      toggleRowHighlight(cb);
-    });
+    getCheckboxes().forEach(cb => { cb.checked = selectAllCb.checked; toggleRowHighlight(cb); });
     updateToolbar();
   });
 
-  // -- ZIP download (single request, server zips) --------------------------
   btnZip && btnZip.addEventListener('click', () => {
     const names = getCheckedNames();
     if (!names.length) return;
@@ -552,10 +437,9 @@ JS = r"""
     document.body.appendChild(form);
     form.submit();
     document.body.removeChild(form);
-    showToast(`Zipping ${names.length} file(s)…`);
+    showToast(`Zipping ${names.length} item(s)\u2026`);
   });
 
-  // -- Sequential queue download --------------------------------------------
   const queuePanel = document.getElementById('queue-panel');
 
   btnQueue && btnQueue.addEventListener('click', () => {
@@ -568,8 +452,6 @@ JS = r"""
     queuePanel.classList.add('visible');
     const listEl = document.getElementById('queue-list');
     listEl.innerHTML = '';
-
-    // Build queue items
     const items = names.map(name => {
       const base = (CURRENT_PATH ? '/' + CURRENT_PATH.replace(/^\/|\/$/g, '') + '/' : '/');
       const url  = base + encodeURIComponent(name);
@@ -584,34 +466,28 @@ JS = r"""
       listEl.appendChild(div);
       return { name, url };
     });
-
     document.getElementById('queue-header-text').textContent =
-      `Downloading ${names.length} file${names.length > 1 ? 's' : ''}…`;
-
+      `Downloading ${names.length} file${names.length > 1 ? 's' : ''}\u2026`;
     for (const item of items) {
       const statusEl = document.getElementById('qs-' + escId(item.name));
       const barEl    = document.getElementById('qb-' + escId(item.name));
-      if (statusEl) { statusEl.className = 'queue-status active'; statusEl.textContent = 'downloading…'; }
+      if (statusEl) { statusEl.className = 'queue-status active'; statusEl.textContent = 'downloading\u2026'; }
       try {
         await downloadWithProgress(item.url, item.name, barEl);
-        if (statusEl) { statusEl.className = 'queue-status done'; statusEl.textContent = '✓ done'; }
+        if (statusEl) { statusEl.className = 'queue-status done'; statusEl.textContent = '\u2713 done'; }
       } catch (err) {
-        if (statusEl) { statusEl.className = 'queue-status error'; statusEl.textContent = '✗ error'; }
+        if (statusEl) { statusEl.className = 'queue-status error'; statusEl.textContent = '\u2717 error'; }
       }
-      // small gap between downloads so browser doesn't choke
       await new Promise(r => setTimeout(r, 300));
     }
-
-    document.getElementById('queue-header-text').textContent = 'Downloads complete ✓';
-    showToast(`Downloaded ${names.length} file(s) ✓`);
+    document.getElementById('queue-header-text').textContent = 'Downloads complete \u2713';
+    showToast(`Downloaded ${names.length} file(s) \u2713`);
   }
 
   function escHtml(s) {
     return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
-  function escId(s) {
-    return s.replace(/[^a-zA-Z0-9]/g, '_');
-  }
+  function escId(s) { return s.replace(/[^a-zA-Z0-9]/g, '_'); }
 
   function downloadWithProgress(url, filename, barEl) {
     return new Promise((resolve, reject) => {
@@ -619,9 +495,7 @@ JS = r"""
       xhr.open('GET', url, true);
       xhr.responseType = 'blob';
       xhr.onprogress = (e) => {
-        if (e.lengthComputable && barEl) {
-          barEl.style.width = (e.loaded / e.total * 100) + '%';
-        }
+        if (e.lengthComputable && barEl) barEl.style.width = (e.loaded / e.total * 100) + '%';
       };
       xhr.onload = () => {
         if (xhr.status === 200) {
@@ -634,9 +508,7 @@ JS = r"""
           document.body.removeChild(a);
           setTimeout(() => URL.revokeObjectURL(a.href), 10000);
           resolve();
-        } else {
-          reject(new Error('HTTP ' + xhr.status));
-        }
+        } else { reject(new Error('HTTP ' + xhr.status)); }
       };
       xhr.onerror = () => reject(new Error('Network error'));
       xhr.send();
@@ -644,58 +516,58 @@ JS = r"""
   }
 """
 
-
-# -- HTML renderer --------------------------------------------------------------
+# ── HTML renderer ─────────────────────────────────────────────────────────────
 def render_page(files, current_path="", protected_set=None):
     if protected_set is None:
         protected_set = set()
 
-    parts = [p for p in current_path.split("/") if p]
-
     from urllib.parse import quote as urlquote
 
-    breadcrumb = '<a href="/">shared-folder</a>'
+    parts = [p for p in current_path.split("/") if p]
+
+    breadcrumb = '<a href="/">LanShare</a>'
     for i, part in enumerate(parts):
-        href = "/" + "/".join(urlquote(p, safe="") for p in parts[: i + 1]) + "/"
+        href = "/" + "/".join(urlquote(p, safe="") for p in parts[:i + 1]) + "/"
         breadcrumb += f' <span>/</span> <a href="{html.escape(href)}">{html.escape(part)}</a>'
 
     back_row = ""
     if parts:
-        parent_parts = parts[:-1]
-        parent = "/" + "/".join(urlquote(p, safe="") for p in parent_parts)
+        parent = "/" + "/".join(urlquote(p, safe="") for p in parts[:-1])
         if parent != "/":
             parent += "/"
-        back_row = f'<tr><td class="check"></td><td class="icon">⬆️</td><td><a href="{html.escape(parent)}">..</a></td><td></td></tr>'
+        back_row = (
+            f'<tr><td class="check"></td><td class="icon">⬆️</td>'
+            f'<td><a href="{html.escape(parent)}">..</a></td><td></td></tr>'
+        )
 
-    base = ("/" + current_path.strip("/") + "/").replace("//", "/")
+    base            = ("/" + current_path.strip("/") + "/").replace("//", "/")
     upload_endpoint = "/upload" + base
-    paste_endpoint = "/paste" + base
-    zip_endpoint = "/zip" + base
+    paste_endpoint  = "/paste"  + base
+    zip_endpoint    = "/zip"    + base
 
-    # Count all selectable items (files + folders, excluding locked)
     file_count_downloadable = sum(
-        1
-        for f in files
-        if not ((current_path.strip("/") + "/" + f["name"]).strip("/") in protected_set and not f["is_dir"])
+        1 for f in files
+        if not ((current_path.strip("/") + "/" + f["name"]).strip("/") in protected_set
+                and not f["is_dir"])
     )
 
     rows = back_row
     for f in files:
-        ne = html.escape(f["name"])  # for display & HTML attrs
-        ne_url = urlquote(f["name"], safe="")  # for href / form values
-        size = f["size"]
+        ne      = html.escape(f["name"])
+        ne_url  = urlquote(f["name"], safe="")
+        size    = f["size"]
         rel_key = (current_path.strip("/") + "/" + f["name"]).strip("/")
-        locked = rel_key in protected_set
+        locked  = rel_key in protected_set
 
         if f["is_dir"]:
             cb_id = f"cb-{html.escape(f['name'])}"
             rows += (
                 f'<tr>'
-                f'<td class="check"><input type="checkbox" class="file-cb" id="{cb_id}" data-name="{ne}" data-type="dir"></td>'
+                f'<td class="check"><input type="checkbox" class="file-cb" id="{cb_id}"'
+                f' data-name="{ne}" data-type="dir"></td>'
                 f'<td class="icon">📁</td>'
                 f'<td><a href="{base}{ne_url}/">{ne}/</a></td>'
-                f'<td class="size">—</td>'
-                f'</tr>'
+                f'<td class="size">—</td></tr>'
             )
         elif locked:
             file_url = base + ne_url
@@ -703,36 +575,36 @@ def render_page(files, current_path="", protected_set=None):
                 f'<tr>'
                 f'<td class="check"></td>'
                 f'<td class="icon">🔒</td>'
-                f'<td><span class="locked" onclick="promptPassword(\'{file_url}\', \'{ne}\')">{ne}</span></td>'
-                f'<td class="size">{size}</td>'
-                f'</tr>'
+                f'<td><span class="locked" onclick="promptPassword(\'{file_url}\',\'{ne}\')">{ne}</span></td>'
+                f'<td class="size">{size}</td></tr>'
             )
         else:
-            icon = get_icon(f["name"])
+            icon  = get_icon(f["name"])
             cb_id = f"cb-{html.escape(f['name'])}"
             rows += (
                 f'<tr>'
-                f'<td class="check"><input type="checkbox" class="file-cb" id="{cb_id}" data-name="{ne}"></td>'
+                f'<td class="check"><input type="checkbox" class="file-cb" id="{cb_id}"'
+                f' data-name="{ne}"></td>'
                 f'<td class="icon">{icon}</td>'
                 f'<td><a href="{base}{ne_url}" download="{ne}">{ne}</a></td>'
-                f'<td class="size">{size}</td>'
-                f'</tr>'
+                f'<td class="size">{size}</td></tr>'
             )
 
-    folder_title = parts[-1] if parts else "shared-folder"
-    file_count = len(files)
-    has_content = bool(files) or bool(back_row)
+    folder_title = parts[-1] if parts else "LanShare"
+    file_count   = len(files)
+    has_content  = bool(files) or bool(back_row)
 
-    # Inject endpoints and current path into JS
     safe_curpath = current_path.strip("/")
-    js = (
-        JS.replace("'__UPLOAD__'", f"'{upload_endpoint}'")
-        .replace("'__PASTE__'", f"'{paste_endpoint}'")
-        .replace("'__ZIP__'", f"'{zip_endpoint}'")
-        .replace("'__CURPATH__'", f"'{safe_curpath}'")
-    )
+    js = (JS
+          .replace("'__UPLOAD__'", f"'{upload_endpoint}'")
+          .replace("'__PASTE__'",  f"'{paste_endpoint}'")
+          .replace("'__ZIP__'",    f"'{zip_endpoint}'")
+          .replace("'__CURPATH__'",f"'{safe_curpath}'"))
 
-    select_all_cb = f'<input type="checkbox" id="select-all-cb" title="Select all">' if file_count_downloadable else ''
+    select_all_cb = (
+        '<input type="checkbox" id="select-all-cb" title="Select all">'
+        if file_count_downloadable else ""
+    )
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -751,23 +623,19 @@ def render_page(files, current_path="", protected_set=None):
       <span class="count">{file_count} items</span>
     </div>
   </header>
-
   <div class="upload-zone" id="drop-zone">
     <input type="file" id="file-input" multiple>
     <span class="upload-icon">⬆️</span>
     <p class="upload-label"><strong>Click to upload</strong> or drag &amp; drop</p>
     <p class="upload-label" style="margin-top:0.25rem;font-size:0.75rem;">Saves to this folder</p>
   </div>
-
   <div id="progress-wrap">
     <div id="progress-label">Uploading…</div>
     <div id="progress-bar-bg"><div id="progress-bar"></div></div>
   </div>
-
   <div class="card">
     <div class="card-header" id="text-header">
-      <span>📋 Paste text</span>
-      <span id="chevron">▼</span>
+      <span>📋 Paste text</span><span id="chevron">▼</span>
     </div>
     <div class="card-body" id="text-body">
       <textarea id="paste-text" placeholder="Paste anything — a link, note, code snippet…"></textarea>
@@ -779,37 +647,27 @@ def render_page(files, current_path="", protected_set=None):
       <p class="hint">Leave password blank to save without protection.</p>
     </div>
   </div>
-
-  <!-- Download queue panel -->
   <div id="queue-panel">
     <div class="queue-header">
       <span id="queue-header-text">Download queue</span>
-      <span style="cursor:pointer;font-size:0.9rem;" onclick="document.getElementById('queue-panel').classList.remove('visible')">✕</span>
+      <span style="cursor:pointer;font-size:0.9rem;"
+            onclick="document.getElementById('queue-panel').classList.remove('visible')">✕</span>
     </div>
     <div class="queue-list" id="queue-list"></div>
   </div>
-
   <div class="files-card">
     <div class="files-header">
-      <div class="files-header-left">
-        {select_all_cb}
-        <span>Name</span>
-      </div>
+      <div class="files-header-left">{select_all_cb}<span>Name</span></div>
       <span>Size</span>
     </div>
-
-    <!-- Multi-select toolbar (hidden until files selected) -->
     <div class="select-toolbar" id="select-toolbar">
       <span class="sel-count" id="sel-count">0 selected</span>
       <button class="btn btn-zip" id="btn-zip" disabled>⬇️ Download as ZIP</button>
       <button class="btn" id="btn-queue" disabled>📋 Queue download</button>
     </div>
-
     {"<table>" + rows + "</table>" if has_content else '<div class="empty">Empty folder</div>'}
   </div>
 </div>
-
-<!-- Password modal -->
 <div class="modal-overlay" id="pw-modal">
   <div class="modal">
     <h2>🔒 Protected file</h2>
@@ -822,20 +680,19 @@ def render_page(files, current_path="", protected_set=None):
     </div>
   </div>
 </div>
-
 <div class="toast" id="toast"></div>
 <script>{js}</script>
 </body>
 </html>"""
 
 
-# -- Request Handler ------------------------------------------------------------
+# ── Request Handler ────────────────────────────────────────────────────────────
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
-        print(f"  {self.address_string()} -> {args[0]} {args[1]}")
+        pass  # silence request logs on Android
 
     def resolve_path(self, url_path):
-        rel = unquote(url_path).lstrip("/")
+        rel    = unquote(url_path).lstrip("/")
         target = (SHARE_DIR / rel).resolve()
         try:
             target.relative_to(SHARE_DIR.resolve())
@@ -849,16 +706,14 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             return ""
 
-    # -- GET -----------------------------------------------------------------
     def do_GET(self):
-        parsed = urlparse(self.path)
+        parsed   = urlparse(self.path)
         url_path = parsed.path
-        params = parse_qs(parsed.query)
-        target = self.resolve_path(url_path)
+        params   = parse_qs(parsed.query)
+        target   = self.resolve_path(url_path)
 
         if target is None:
-            self.send_error(403, "Forbidden")
-            return
+            self.send_error(403, "Forbidden"); return
 
         if target.is_dir():
             self.serve_dir(target)
@@ -868,8 +723,7 @@ class Handler(BaseHTTPRequestHandler):
                 pw = params.get("pw", [None])[0]
                 if not pw or not check_file_password(key, pw):
                     if self.command == "HEAD":
-                        self.send_response(401)
-                        self.end_headers()
+                        self.send_response(401); self.end_headers()
                     else:
                         self.send_error(401, "Wrong password")
                     return
@@ -882,181 +736,134 @@ class Handler(BaseHTTPRequestHandler):
 
     def serve_dir(self, directory):
         items = []
-        db = load_passwd_db()
+        db    = load_passwd_db()
         try:
-            for entry in sorted(directory.iterdir(), key=lambda e: (e.is_file(), e.name.lower())):
+            for entry in sorted(directory.iterdir(),
+                                 key=lambda e: (e.is_file(), e.name.lower())):
                 if entry.name == ".passwords.json":
                     continue
-                items.append(
-                    {
-                        "name": entry.name,
-                        "size": human_size(entry.stat().st_size) if entry.is_file() else "",
-                        "is_dir": entry.is_dir(),
-                    }
-                )
+                items.append({
+                    "name":   entry.name,
+                    "size":   human_size(entry.stat().st_size) if entry.is_file() else "",
+                    "is_dir": entry.is_dir(),
+                })
         except Exception:
             items = []
 
         try:
             rel = str(directory.resolve().relative_to(SHARE_DIR.resolve()))
-            if rel == ".":
-                rel = ""
+            if rel == ".": rel = ""
         except ValueError:
             rel = ""
 
-        body = render_page(items, rel, protected_set=set(db.keys())).encode()
+        body = render_page(items, rel, protected_set=set(db.keys())).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        try:
-            self.wfile.write(body)
-        except BrokenPipeError:
-            pass
+        try:    self.wfile.write(body)
+        except BrokenPipeError: pass
 
     def serve_file(self, path):
-        mime, _ = mimetypes.guess_type(str(path))
-        mime = mime or "application/octet-stream"
-        # RFC 5987: encode Unicode filename so all browsers handle it correctly
         from urllib.parse import quote as urlquote
-
-        ascii_name = path.name.encode("ascii", "replace").decode("ascii")
-        utf8_name = urlquote(path.name, safe="")
+        mime, _ = mimetypes.guess_type(str(path))
+        mime     = mime or "application/octet-stream"
+        ascii_name  = path.name.encode("ascii", "replace").decode("ascii")
+        utf8_name   = urlquote(path.name, safe="")
         disposition = f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{utf8_name}"
         self.send_response(200)
         self.send_header("Content-Type", mime)
         self.send_header("Content-Length", str(path.stat().st_size))
         self.send_header("Content-Disposition", disposition)
         self.end_headers()
-        if self.command == "HEAD":
-            return
+        if self.command == "HEAD": return
         try:
             with open(path, "rb") as f:
                 while chunk := f.read(65536):
                     self.wfile.write(chunk)
-        except BrokenPipeError:
-            pass
+        except BrokenPipeError: pass
 
-    # -- POST ----------------------------------------------------------------
     def do_POST(self):
+        from urllib.parse import quote as urlquote
         url_path = urlparse(self.path).path
 
-        # -- ZIP download ----------------------------------------------------
+        # ── ZIP ──────────────────────────────────────────────────────────────
         if url_path.startswith("/zip"):
-            rel = unquote(url_path[len("/zip") :]).strip("/")
+            rel        = unquote(url_path[4:]).strip("/")
             target_dir = (SHARE_DIR / rel).resolve() if rel else SHARE_DIR.resolve()
-            try:
-                target_dir.relative_to(SHARE_DIR.resolve())
+            try:    target_dir.relative_to(SHARE_DIR.resolve())
             except ValueError:
-                self.send_error(403, "Forbidden")
-                return
+                self.send_error(403, "Forbidden"); return
 
-            # Parse form body to get selected names (files or folders)
             length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(length).decode("utf-8", errors="replace")
+            body   = self.rfile.read(length).decode("utf-8", errors="replace")
             from urllib.parse import parse_qs as pqs
-
-            params = pqs(body)
-            names = params.get("files", [])
-
+            names  = pqs(body).get("files", [])
             if not names:
-                self.send_error(400, "No files specified")
-                return
+                self.send_error(400, "No files specified"); return
 
-            # Build zip in memory -- recurse into folders
-            buf = io.BytesIO()
+            buf   = io.BytesIO()
             added = 0
             with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
                 for name in names:
-                    safe = Path(name).name  # no path traversal
+                    safe  = Path(name).name
                     fpath = (target_dir / safe).resolve()
-                    try:
-                        fpath.relative_to(SHARE_DIR.resolve())
-                    except ValueError:
-                        continue
-
+                    try:    fpath.relative_to(SHARE_DIR.resolve())
+                    except ValueError: continue
                     if fpath.is_file():
-                        key = self.rel_key(fpath)
-                        if is_protected(key):
-                            continue
-                        zf.write(fpath, safe)
-                        added += 1
+                        if is_protected(self.rel_key(fpath)): continue
+                        zf.write(fpath, safe); added += 1
                     elif fpath.is_dir():
-                        # Walk the entire directory tree
                         for child in sorted(fpath.rglob("*")):
-                            if not child.is_file():
-                                continue
-                            if child.name == ".passwords.json":
-                                continue
-                            key = self.rel_key(child)
-                            if is_protected(key):
-                                continue
-                            arc_name = safe + "/" + str(child.relative_to(fpath))
-                            zf.write(child, arc_name)
+                            if not child.is_file(): continue
+                            if child.name == ".passwords.json": continue
+                            if is_protected(self.rel_key(child)): continue
+                            zf.write(child, safe + "/" + str(child.relative_to(fpath)))
                             added += 1
 
             if added == 0:
-                self.send_error(404, "No downloadable files found")
-                return
+                self.send_error(404, "No downloadable files found"); return
 
             zip_bytes = buf.getvalue()
-            if len(names) == 1:
-                zip_name = names[0].rstrip("/") + ".zip"
-            else:
-                zip_name = "files.zip"
-            print(f"  ZIP: {added} file(s) -> {zip_name} ({human_size(len(zip_bytes))})")
-
-            from urllib.parse import quote as urlquote
-
-            ascii_zname = zip_name.encode("ascii", "replace").decode("ascii")
-            utf8_zname = urlquote(zip_name, safe="")
-            zip_disp = f"attachment; filename=\"{ascii_zname}\"; filename*=UTF-8''{utf8_zname}"
+            zip_name  = (names[0].rstrip("/") + ".zip") if len(names) == 1 else "files.zip"
+            ascii_z   = zip_name.encode("ascii", "replace").decode("ascii")
+            utf8_z    = urlquote(zip_name, safe="")
+            zip_disp  = f"attachment; filename=\"{ascii_z}\"; filename*=UTF-8''{utf8_z}"
 
             self.send_response(200)
             self.send_header("Content-Type", "application/zip")
             self.send_header("Content-Length", str(len(zip_bytes)))
             self.send_header("Content-Disposition", zip_disp)
             self.end_headers()
-            try:
-                self.wfile.write(zip_bytes)
-            except BrokenPipeError:
-                pass
+            try:    self.wfile.write(zip_bytes)
+            except BrokenPipeError: pass
             return
 
-        # -- Text paste ------------------------------------------------------
+        # ── Paste text ───────────────────────────────────────────────────────
         if url_path.startswith("/paste"):
-            rel = unquote(url_path[len("/paste") :]).strip("/")
+            rel        = unquote(url_path[6:]).strip("/")
             target_dir = (SHARE_DIR / rel).resolve() if rel else SHARE_DIR.resolve()
-            try:
-                target_dir.relative_to(SHARE_DIR.resolve())
+            try:    target_dir.relative_to(SHARE_DIR.resolve())
             except ValueError:
-                self.send_error(403, "Forbidden")
-                return
+                self.send_error(403, "Forbidden"); return
 
-            length = int(self.headers.get("Content-Length", 0))
-            payload = json.loads(self.rfile.read(length))
-            text = payload.get("text", "")
-            name = Path(payload.get("filename", "note.txt")).name
+            length   = int(self.headers.get("Content-Length", 0))
+            payload  = json.loads(self.rfile.read(length))
+            text     = payload.get("text", "")
+            name     = Path(payload.get("filename", "note.txt")).name
             password = payload.get("password", "").strip()
-            if not name.endswith(".txt"):
-                name += ".txt"
+            if not name.endswith(".txt"): name += ".txt"
 
             target_dir.mkdir(parents=True, exist_ok=True)
-            dest = target_dir / name
+            dest    = target_dir / name
             counter = 1
-            stem = Path(name).stem
+            stem    = Path(name).stem
             while dest.exists():
-                dest = target_dir / f"{stem}_{counter}.txt"
-                counter += 1
-
+                dest = target_dir / f"{stem}_{counter}.txt"; counter += 1
             dest.write_text(text, encoding="utf-8")
 
             if password:
-                key = self.rel_key(dest)
-                set_file_password(key, password)
-                print(f"  Saved (🔒): {dest.name} ({human_size(len(text.encode()))})")
-            else:
-                print(f"  Saved text: {dest.name} ({human_size(len(text.encode()))})")
+                set_file_password(self.rel_key(dest), password)
 
             resp = json.dumps({"saved": dest.name}).encode()
             self.send_response(200)
@@ -1066,65 +873,50 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(resp)
             return
 
-        # -- File upload -----------------------------------------------------
+        # ── Upload ───────────────────────────────────────────────────────────
         if url_path.startswith("/upload"):
-            rel = unquote(url_path[len("/upload") :]).strip("/")
+            rel        = unquote(url_path[7:]).strip("/")
             upload_dir = (SHARE_DIR / rel).resolve() if rel else SHARE_DIR.resolve()
-            try:
-                upload_dir.relative_to(SHARE_DIR.resolve())
+            try:    upload_dir.relative_to(SHARE_DIR.resolve())
             except ValueError:
-                self.send_error(403, "Forbidden")
-                return
+                self.send_error(403, "Forbidden"); return
 
             upload_dir.mkdir(parents=True, exist_ok=True)
             content_type = self.headers.get("Content-Type", "")
             if "multipart/form-data" not in content_type:
-                self.send_error(400, "Expected multipart/form-data")
-                return
+                self.send_error(400, "Expected multipart/form-data"); return
 
             boundary = None
             for part in content_type.split(";"):
                 part = part.strip()
                 if part.startswith("boundary="):
-                    boundary = part[9:].strip().encode()
-                    break
+                    boundary = part[9:].strip().encode(); break
             if not boundary:
-                self.send_error(400, "No boundary")
-                return
+                self.send_error(400, "No boundary"); return
 
             length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(length)
-            parts = body.split(b"--" + boundary)
+            body   = self.rfile.read(length)
+            parts  = body.split(b"--" + boundary)
 
             saved = 0
             for part in parts:
-                if b"Content-Disposition" not in part:
-                    continue
-                if b"\r\n\r\n" not in part:
-                    continue
+                if b"Content-Disposition" not in part: continue
+                if b"\r\n\r\n" not in part: continue
                 headers_raw, content = part.split(b"\r\n\r\n", 1)
-                content = content.rstrip(b"\r\n--")
+                content     = content.rstrip(b"\r\n--")
                 headers_str = headers_raw.decode(errors="replace")
-                filename = None
+                filename    = None
                 for line in headers_str.split("\r\n"):
                     if "filename=" in line:
-                        filename = line.split("filename=")[-1].strip().strip('"')
-                        break
-                if not filename or not content:
-                    continue
+                        filename = line.split("filename=")[-1].strip().strip('"'); break
+                if not filename or not content: continue
                 filename = Path(filename).name
-                dest = upload_dir / filename
-                counter = 1
+                dest     = upload_dir / filename
+                counter  = 1
                 stem, suffix = Path(filename).stem, Path(filename).suffix
                 while dest.exists():
-                    dest = upload_dir / f"{stem}_{counter}{suffix}"
-                    counter += 1
+                    dest = upload_dir / f"{stem}_{counter}{suffix}"; counter += 1
                 dest.write_bytes(content)
-                try:
-                    label = str(upload_dir.relative_to(SHARE_DIR))
-                except Exception:
-                    label = str(upload_dir)
-                print(f"  Saved: {dest.name} ({human_size(len(content))}) -> {label}")
                 saved += 1
 
             resp = json.dumps({"saved": saved}).encode()
@@ -1138,135 +930,152 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
 
+# ── Kivy App ──────────────────────────────────────────────────────────────────
 class LanShareApp(App):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.server = None
+        self.server     = None
         self.server_url = ""
-        self.url_label = None
-        self.path_label = None
-        self.open_button = None
 
     def build(self):
         self.title = "LAN Share"
-        Window.clearcolor = (1, 1, 1, 1)
+        Window.clearcolor = (0.97, 0.96, 0.95, 1)
 
-        root = BoxLayout(orientation="vertical", padding=dp(20), spacing=dp(14))
+        root = BoxLayout(orientation="vertical", padding=dp(24), spacing=dp(16))
 
-        heading = Label(
-            text="LAN Share",
-            color=(0.1, 0.1, 0.1, 1),
-            font_size="28sp",
+        # Title
+        root.add_widget(Label(
+            text="📂 LAN Share",
+            font_size="26sp",
             bold=True,
+            color=(0.1, 0.1, 0.1, 1),
             size_hint=(1, None),
-            height=dp(52),
-        )
-        root.add_widget(heading)
+            height=dp(48),
+            halign="center",
+        ))
 
+        # URL display
         self.url_label = Label(
-            text="Starting server...",
-            color=(0.1, 0.1, 0.1, 1),
-            font_size="30sp",
+            text="Starting…",
+            font_size="22sp",
             bold=True,
+            color=(0.16, 0.43, 0.96, 1),
             size_hint=(1, None),
-            height=dp(140),
+            height=dp(60),
             halign="center",
             valign="middle",
         )
-        self.url_label.bind(size=lambda inst, val: setattr(inst, "text_size", val))
+        self.url_label.bind(size=lambda w, _: setattr(w, "text_size", w.size))
         root.add_widget(self.url_label)
 
-        self.open_button = Button(
-            text="Open in Browser",
+        # Hint
+        self.hint_label = Label(
+            text="Open this address in any browser on the same Wi-Fi",
+            font_size="14sp",
+            color=(0.53, 0.53, 0.5, 1),
             size_hint=(1, None),
-            height=dp(52),
+            height=dp(32),
+            halign="center",
+        )
+        root.add_widget(self.hint_label)
+
+        # Open in browser button
+        self.open_btn = Button(
+            text="🌐  Open in Browser",
+            size_hint=(1, None),
+            height=dp(56),
             background_normal="",
             background_color=(0.16, 0.43, 0.96, 1),
             color=(1, 1, 1, 1),
+            font_size="16sp",
             disabled=True,
         )
-        self.open_button.bind(on_press=self.open_in_browser)
-        root.add_widget(self.open_button)
+        self.open_btn.bind(on_press=self.open_in_browser)
+        root.add_widget(self.open_btn)
 
+        # Folder path
         self.path_label = Label(
-            text=f"Shared folder: {SHARE_DIR}",
-            color=(0.3, 0.3, 0.3, 1),
-            font_size="16sp",
-            halign="left",
+            text=f"Shared folder:\n{SHARE_DIR}",
+            font_size="12sp",
+            color=(0.4, 0.4, 0.4, 1),
+            size_hint=(1, None),
+            height=dp(52),
+            halign="center",
             valign="top",
         )
-        self.path_label.bind(size=lambda inst, val: setattr(inst, "text_size", val))
+        self.path_label.bind(size=lambda w, _: setattr(w, "text_size", w.size))
         root.add_widget(self.path_label)
 
         return root
 
     def on_start(self):
         if platform == "android":
-            self.request_android_permissions()
+            self._request_permissions()
         else:
-            self.start_server()
+            Clock.schedule_once(lambda dt: self._start_server(), 0.1)
 
-    def request_android_permissions(self):
+    def _request_permissions(self):
         try:
-            from android.permissions import Permission, check_permission, request_permissions
-
-            perms = [Permission.READ_EXTERNAL_STORAGE, Permission.WRITE_EXTERNAL_STORAGE]
-            if all(check_permission(p) for p in perms):
-                self.start_server()
+            from android.permissions import (  # type: ignore
+                Permission, check_permission, request_permissions
+            )
+            needed = [
+                Permission.READ_EXTERNAL_STORAGE,
+                Permission.WRITE_EXTERNAL_STORAGE,
+            ]
+            if all(check_permission(p) for p in needed):
+                Clock.schedule_once(lambda dt: self._start_server(), 0.1)
                 return
 
-            def _callback(permissions, grants):
-                if all(grants):
-                    Clock.schedule_once(lambda dt: self.start_server(), 0)
-                else:
-                    self.url_label.text = "Storage permission denied"
-                    self.path_label.text = "Please allow storage permissions and restart app."
+            def _cb(permissions, grants):
+                Clock.schedule_once(lambda dt: self._start_server(), 0.1)
 
-            request_permissions(perms, _callback)
-        except Exception as exc:
-            self.url_label.text = f"Permission error: {exc}"
+            request_permissions(needed, _cb)
+        except Exception as e:
+            self.url_label.text = f"Permission error:\n{e}"
 
-    def start_server(self):
+    def _start_server(self):
         if self.server is not None:
             return
+        try:
+            SHARE_DIR.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            self.url_label.text = f"Cannot create folder:\n{e}"
+            return
 
-        SHARE_DIR.mkdir(parents=True, exist_ok=True)
-
-        ip = get_local_ip()
+        ip  = get_local_ip()
         self.server_url = f"http://{ip}:{PORT}"
-        self.url_label.text = self.server_url
-        self.path_label.text = f"Shared folder: {SHARE_DIR}"
 
         try:
             self.server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
-        except Exception as exc:
-            self.url_label.text = f"Failed to start server: {exc}"
+        except Exception as e:
+            self.url_label.text = f"Server error:\n{e}"
             return
 
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
-        self.open_button.disabled = False
 
-    def open_in_browser(self, _instance):
+        self.url_label.text    = self.server_url
+        self.path_label.text   = f"Shared folder:\n{SHARE_DIR}"
+        self.open_btn.disabled = False
+
+    def open_in_browser(self, *_):
         if not self.server_url:
             return
-
         if platform == "android":
             try:
-                from jnius import autoclass
-
-                Intent = autoclass("android.content.Intent")
-                Uri = autoclass("android.net.Uri")
-                PythonActivity = autoclass("org.kivy.android.PythonActivity")
-
+                from jnius import autoclass  # type: ignore
+                Intent          = autoclass("android.content.Intent")
+                Uri             = autoclass("android.net.Uri")
+                PythonActivity  = autoclass("org.kivy.android.PythonActivity")
                 intent = Intent(Intent.ACTION_VIEW, Uri.parse(self.server_url))
                 PythonActivity.mActivity.startActivity(intent)
+                return
             except Exception:
-                webbrowser.open(self.server_url)
-        else:
-            webbrowser.open(self.server_url)
+                pass
+        webbrowser.open(self.server_url)
 
     def on_stop(self):
-        if self.server is not None:
+        if self.server:
             self.server.shutdown()
             self.server.server_close()
 
