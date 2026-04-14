@@ -74,9 +74,58 @@ jobs:
           python -m pip show python-for-android
 
       - name: Build APK (debug)
-        run: buildozer -v android debug
+        run: |
+          set -o pipefail
+          buildozer -v android debug 2>&1 | tee buildozer-ci.log
+
+      - name: Print likely failure lines
+        if: failure()
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          p = Path("buildozer-ci.log")
+          if not p.exists():
+              print("buildozer-ci.log not found")
+              raise SystemExit(0)
+
+          lines = p.read_text(errors="replace").splitlines()
+          patterns = [
+              re.compile(r"(^|\b)(error|failed|exception|traceback)(\b|:)", re.I),
+              re.compile(r"libffi", re.I),
+          ]
+          hits = [i for i, line in enumerate(lines) if any(p.search(line) for p in patterns)]
+
+          print("---- Diagnostic extract from buildozer-ci.log ----")
+          if not hits:
+              start = max(0, len(lines) - 200)
+              for line in lines[start:]:
+                  print(line)
+          else:
+              shown = set()
+              for idx in hits[-20:]:
+                  for j in range(max(0, idx - 3), min(len(lines), idx + 4)):
+                      if j not in shown:
+                          print(lines[j])
+                          shown.add(j)
+                  print("-")
+          print("---- End diagnostic extract ----")
+          PY
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            buildozer-ci.log
+            .buildozer/**/*.log
+            .buildozer/**/config.log
+          if-no-files-found: warn
 
       - name: Upload APK artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: lan-share-apk
