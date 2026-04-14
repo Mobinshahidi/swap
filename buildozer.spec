@@ -39,6 +39,7 @@ android.enable_androidx = True
 android.logcat_filters = *:S python:D
 
 p4a.bootstrap = sdl2
+p4a.branch = v2024.01.21
 
 [buildozer]
 
