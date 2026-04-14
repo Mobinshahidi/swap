@@ -9,6 +9,8 @@ on:
 jobs:
   build-apk:
     runs-on: ubuntu-22.04
+    env:
+      ACLOCAL_PATH: /usr/share/aclocal
 
     steps:
       - name: Checkout repository
@@ -29,8 +31,10 @@ jobs:
             openjdk-17-jdk \
             autoconf \
             automake \
+            gettext \
             libtool \
             libtool-bin \
+            libltdl-dev \
             pkg-config \
             zlib1g-dev \
             libncurses5-dev \
@@ -56,6 +60,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install buildozer==1.5.0 cython==0.29.36
 
+      - name: Show autotools versions
+        run: |
+          autoconf --version | head -n 1
+          automake --version | head -n 1
+          libtoolize --version | head -n 1
+
       - name: Force stable python-for-android
         run: |
           python -m pip show python-for-android || true
@@ -64,7 +74,7 @@ jobs:
           python -m pip show python-for-android
 
       - name: Build APK (debug)
-        run: buildozer android debug
+        run: buildozer -v android debug
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
