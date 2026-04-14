@@ -33,10 +33,10 @@ jobs:
             zlib1g-dev \
             libncurses5-dev \
             libncursesw5-dev \
-            libtinfo5 \
             cmake \
             libffi-dev \
             libssl-dev
+          sudo apt-get install -y libtinfo5 || sudo apt-get install -y libtinfo6
 
       - name: Cache Buildozer directory
         uses: actions/cache@v4
