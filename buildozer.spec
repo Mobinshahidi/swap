@@ -27,7 +27,6 @@ android.api = 33
 android.minapi = 21
 android.ndk = 25b
 android.ndk_api = 21
-android.sdk = 33
 android.archs = arm64-v8a,armeabi-v7a
 
 android.entrypoint = org.kivy.android.PythonActivity
@@ -40,7 +39,6 @@ android.enable_androidx = True
 android.logcat_filters = *:S python:D
 
 p4a.bootstrap = sdl2
-p4a.branch = master
 
 [buildozer]
 
