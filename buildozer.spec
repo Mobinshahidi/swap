@@ -13,7 +13,6 @@ source.exclude_patterns =
 version = 1.0.0
 
 requirements = python3,kivy,android
-requirements.source.kivy =
 
 presplash.filename =
 icon.filename =
