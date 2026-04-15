@@ -11,6 +11,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.Settings
 import android.util.TypedValue
+import android.util.Log
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
@@ -199,7 +200,11 @@ class MainActivity : Activity() {
             putExtra(ServerService.EXTRA_PORT, port)
             putExtra(ServerService.EXTRA_TREE_URI, currentTreeUri)
         }
-        startForegroundService(intent)
+        runCatching { startForegroundService(intent) }
+            .onFailure {
+                Log.e("LanShare", "Failed to start foreground service", it)
+                toast("Failed to start server service: ${it.message}")
+            }
     }
 
     private fun renderQr(content: String) {
