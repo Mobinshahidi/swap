@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg_main">#F7F6F3</color>
+    <color name="text_primary">#1A1A18</color>
+    <color name="text_muted">#888680</color>
+    <color name="status_running">#16A34A</color>
+    <color name="status_stopped">#E53E3E</color>
+</resources>
