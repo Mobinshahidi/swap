@@ -106,7 +106,15 @@ class HttpServer(
             val files = storage.listEntries(relative)
             val protected = kotlinx.coroutines.runBlocking { passwordManager.protectedFiles() }
             val html = HtmlRenderer.renderPage(files, relative, protected)
-            writeText(out, 200, "OK", "text/html; charset=utf-8", html, req.method == "HEAD")
+            val body = html.toByteArray(Charsets.UTF_8)
+            val headers = linkedMapOf(
+                "Content-Type" to "text/html; charset=utf-8",
+                "Content-Length" to body.size.toString(),
+                "X-Swap-Snapshot" to snapshotOf(files),
+                "Connection" to "close"
+            )
+            writeStatusLine(out, 200, "OK", headers)
+            if (req.method != "HEAD") out.write(body)
             return
         }
 
@@ -366,6 +374,13 @@ class HttpServer(
             500 -> "Internal Server Error"
             else -> "OK"
         }
+    }
+
+    private fun snapshotOf(files: List<FileEntry>): String {
+        return files
+            .joinToString("|") { "${it.name}:${it.size}:${it.isDirectory}:${it.relativePath}" }
+            .hashCode()
+            .toString()
     }
 
     private data class MultipartPart(val filename: String?, val content: ByteArray)

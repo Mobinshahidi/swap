@@ -56,6 +56,17 @@
                 android:contentDescription="QR code" />
 
             <TextView
+                android:id="@+id/tvQrMode"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="6dp"
+                android:fontFamily="@font/jetbrains_mono_regular"
+                android:text="@string/qr_mode_none"
+                android:textColor="@color/text_muted"
+                android:textSize="12sp" />
+
+            <TextView
                 android:id="@+id/tvStatus"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -86,7 +97,7 @@
                     android:textColorHint="@color/text_muted" />
 
                 <Button
-                    android:id="@+id/btnApplyPort"
+                    android:id="@+id/btnStartServer"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="8dp"
@@ -97,7 +108,7 @@
                     android:paddingTop="10dp"
                     android:paddingRight="16dp"
                     android:paddingBottom="10dp"
-                    android:text="Restart"
+                    android:text="Start / Restart"
                     android:textAllCaps="false"
                     android:textColor="@color/white" />
             </LinearLayout>
@@ -109,25 +120,9 @@
                 android:orientation="horizontal">
 
                 <Button
-                    android:id="@+id/btnStartServer"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:background="@drawable/bg_primary_button"
-                    android:fontFamily="@font/jetbrains_mono_bold"
-                    android:minHeight="46dp"
-                    android:paddingTop="10dp"
-                    android:paddingBottom="10dp"
-                    android:text="Start Server"
-                    android:textAllCaps="false"
-                    android:textColor="@color/white" />
-
-                <Button
                     android:id="@+id/btnStopServer"
-                    android:layout_width="0dp"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="12dp"
                     android:background="@drawable/bg_danger_button"
                     android:fontFamily="@font/jetbrains_mono_bold"
                     android:minHeight="46dp"
@@ -152,7 +147,7 @@
                     android:background="@drawable/bg_teal_button"
                     android:fontFamily="@font/jetbrains_mono_bold"
                     android:minHeight="46dp"
-                    android:text="Turn on hotspot"
+                    android:text="Hotspot settings"
                     android:textAllCaps="false"
                     android:textColor="@color/white" />
 

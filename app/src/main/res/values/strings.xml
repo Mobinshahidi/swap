@@ -3,4 +3,7 @@
     <string name="app_name">Swap</string>
     <string name="subtitle">Open this address in any browser on the same Wi-Fi</string>
     <string name="server_not_running">Server not running</string>
+    <string name="qr_mode_server">QR mode: Server URL</string>
+    <string name="qr_mode_hotspot">QR mode: Hotspot Wi-Fi</string>
+    <string name="qr_mode_none">QR mode: None</string>
 </resources>

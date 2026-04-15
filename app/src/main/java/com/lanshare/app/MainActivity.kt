@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.provider.OpenableColumns
 import android.provider.Settings
 import android.util.TypedValue
 import android.util.Log
@@ -34,6 +35,7 @@ class MainActivity : Activity() {
     private lateinit var tvSubtitle: TextView
     private lateinit var tvStatus: TextView
     private lateinit var tvFolder: TextView
+    private lateinit var tvQrMode: TextView
     private lateinit var etPort: EditText
     private lateinit var qrImage: ImageView
 
@@ -55,13 +57,13 @@ class MainActivity : Activity() {
         tvSubtitle = findViewById(R.id.tvSubtitle)
         tvStatus = findViewById(R.id.tvStatus)
         tvFolder = findViewById(R.id.tvFolder)
+        tvQrMode = findViewById(R.id.tvQrMode)
         etPort = findViewById(R.id.etPort)
         qrImage = findViewById(R.id.ivQr)
 
         val btnOpenBrowser: Button = findViewById(R.id.btnOpenBrowser)
-        val btnApplyPort: Button = findViewById(R.id.btnApplyPort)
-        val btnChangeFolder: Button = findViewById(R.id.btnChangeFolder)
         val btnStartServer: Button = findViewById(R.id.btnStartServer)
+        val btnChangeFolder: Button = findViewById(R.id.btnChangeFolder)
         val btnStopServer: Button = findViewById(R.id.btnStopServer)
         val btnEnableHotspot: Button = findViewById(R.id.btnEnableHotspot)
         val btnShowHotspotQr: Button = findViewById(R.id.btnShowHotspotQr)
@@ -74,7 +76,9 @@ class MainActivity : Activity() {
         storage.ensureRootExists()
         tvFolder.text = storage.displayPath()
         tvUrl.text = "http://0.0.0.0:$port"
+        tvQrMode.text = getString(R.string.qr_mode_none)
         renderQr(tvUrl.text.toString())
+        handleShareIntent(intent)
 
         btnOpenBrowser.setOnClickListener {
             if (currentUrl.isBlank()) {
@@ -82,17 +86,6 @@ class MainActivity : Activity() {
                 return@setOnClickListener
             }
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(currentUrl)))
-        }
-
-        btnApplyPort.setOnClickListener {
-            val p = etPort.text.toString().trim().toIntOrNull()
-            if (p == null || p !in 1024..65535) {
-                etPort.error = "Port must be 1024-65535"
-                return@setOnClickListener
-            }
-            prefs.edit().putInt(KEY_PORT, p).apply()
-            showHotspotQr = false
-            startOrRestartService(p)
         }
 
         btnStartServer.setOnClickListener {
@@ -104,6 +97,7 @@ class MainActivity : Activity() {
             prefs.edit().putInt(KEY_PORT, p).apply()
             if (hasRequiredStoragePermission()) {
                 showHotspotQr = false
+                tvQrMode.text = getString(R.string.qr_mode_server)
                 startOrRestartService(p)
             } else {
                 ensurePermissionAndStart()
@@ -120,6 +114,7 @@ class MainActivity : Activity() {
             tvStatus.text = "Status: stopped"
             tvStatus.setTextColor(resources.getColor(R.color.status_stopped, theme))
             showHotspotQr = false
+            tvQrMode.text = getString(R.string.qr_mode_none)
             renderQr("")
         }
 
@@ -132,7 +127,16 @@ class MainActivity : Activity() {
         }
 
         btnShowHotspotQr.setOnClickListener {
-            showHotspotQrDialog()
+            val auto = readHotspotCredentialsAuto()
+            if (auto != null) {
+                prefs.edit().putString(KEY_HOTSPOT_SSID, auto.first).putString(KEY_HOTSPOT_PASS, auto.second).apply()
+                showHotspotQr = true
+                tvQrMode.text = getString(R.string.qr_mode_hotspot)
+                renderQr(buildWifiQrPayload(auto.first, auto.second))
+                toast("Hotspot QR generated from device settings")
+            } else {
+                showHotspotQrDialog()
+            }
         }
 
         btnChangeFolder.setOnClickListener {
@@ -152,6 +156,12 @@ class MainActivity : Activity() {
         if (!hasRequiredStoragePermission()) {
             ensurePermissionAndStart()
         }
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleShareIntent(intent)
     }
 
     override fun onPause() {
@@ -211,6 +221,7 @@ class MainActivity : Activity() {
                 tvUrl.text = if (state.url.isBlank()) getString(R.string.server_not_running) else state.url
                 if (state.folderDisplay.isNotBlank()) tvFolder.text = state.folderDisplay
                 if (!showHotspotQr) {
+                    tvQrMode.text = if (state.url.isBlank()) getString(R.string.qr_mode_none) else getString(R.string.qr_mode_server)
                     renderQr(tvUrl.text.toString())
                 }
             }
@@ -311,10 +322,22 @@ class MainActivity : Activity() {
                 prefs.edit().putString(KEY_HOTSPOT_SSID, ssid).putString(KEY_HOTSPOT_PASS, pass).apply()
                 val payload = buildWifiQrPayload(ssid, pass)
                 showHotspotQr = true
+                tvQrMode.text = getString(R.string.qr_mode_hotspot)
                 renderQr(payload)
                 toast("Hotspot QR generated")
             }
             .show()
+    }
+
+    private fun readHotspotCredentialsAuto(): Pair<String, String>? {
+        return runCatching {
+            val wm = applicationContext.getSystemService(WIFI_SERVICE)
+            val method = wm.javaClass.methods.firstOrNull { it.name == "getWifiApConfiguration" } ?: return@runCatching null
+            val config = method.invoke(wm) ?: return@runCatching null
+            val ssid = config.javaClass.getField("SSID").get(config) as? String ?: return@runCatching null
+            val key = runCatching { config.javaClass.getField("preSharedKey").get(config) as? String }.getOrNull() ?: ""
+            if (ssid.isBlank()) null else ssid to key
+        }.getOrNull()
     }
 
     private fun buildWifiQrPayload(ssid: String, password: String): String {
@@ -342,6 +365,38 @@ class MainActivity : Activity() {
             value.toFloat(),
             resources.displayMetrics
         ).toInt()
+    }
+
+    private fun handleShareIntent(incomingIntent: Intent?) {
+        if (incomingIntent == null) return
+        val action = incomingIntent.action ?: return
+        val type = incomingIntent.type ?: return
+        if (action != Intent.ACTION_SEND || type.isBlank()) return
+        val streamUri = incomingIntent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM) ?: return
+        if (!hasRequiredStoragePermission()) {
+            toast("Grant storage permission first")
+            return
+        }
+        val displayName = queryDisplayName(streamUri) ?: "shared_file"
+        val bytes = runCatching { contentResolver.openInputStream(streamUri)?.use { it.readBytes() } }.getOrNull() ?: return
+        val storage = StorageAccess(this, currentTreeUri)
+        if (!storage.ensureRootExists()) {
+            toast("Shared folder unavailable")
+            return
+        }
+        val saved = storage.saveFile("", displayName, bytes)
+        if (saved != null) {
+            toast("Imported: $saved")
+            setIntent(Intent())
+        }
+    }
+
+    private fun queryDisplayName(uri: Uri): String? {
+        val c = contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null) ?: return null
+        c.use {
+            if (it.moveToFirst()) return it.getString(0)
+        }
+        return null
     }
 
     companion object {
