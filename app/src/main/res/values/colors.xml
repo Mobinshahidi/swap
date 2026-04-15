@@ -7,6 +7,9 @@
     <color name="text_muted">#888680</color>
     <color name="accent">#2A6EF5</color>
     <color name="accent_light">#EEF2FF</color>
+    <color name="action_restart">#F59E0B</color>
+    <color name="action_stop">#E53E3E</color>
+    <color name="action_folder">#0EA5A4</color>
     <color name="status_running">#16A34A</color>
     <color name="status_stopped">#E53E3E</color>
     <color name="white">#FFFFFF</color>

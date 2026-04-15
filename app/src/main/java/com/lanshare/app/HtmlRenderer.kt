@@ -399,7 +399,7 @@ function downloadWithProgress(url, filename, barEl) {
 """.trimIndent()
 
     fun renderPage(files: List<FileEntry>, currentPath: String, protectedFiles: Set<String>): String {
-        val folderTitle = if (currentPath.isBlank()) "LanShare" else currentPath.substringAfterLast('/')
+        val folderTitle = if (currentPath.isBlank()) "Swap" else currentPath.substringAfterLast('/')
         val breadcrumb = buildBreadcrumb(currentPath)
         val rows = buildRows(files, currentPath, protectedFiles)
         val selectable = files.count { it.isDirectory || it.relativePath !in protectedFiles }
@@ -504,11 +504,11 @@ function downloadWithProgress(url, filename, barEl) {
 
     private fun buildBreadcrumb(currentPath: String): String {
         if (currentPath.isBlank()) {
-            return "<a href=\"/\">LanShare</a>"
+            return "<a href=\"/\">Swap</a>"
         }
         val segments = currentPath.split('/').filter { it.isNotBlank() }
         val out = mutableListOf<String>()
-        out.add("<a href=\"/\">LanShare</a>")
+        out.add("<a href=\"/\">Swap</a>")
         var accum = ""
         for (seg in segments) {
             accum = if (accum.isBlank()) seg else "$accum/$seg"
