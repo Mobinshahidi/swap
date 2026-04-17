@@ -1,0 +1,2 @@
+Swap runs a local HTTP server on Android so devices on the same Wi-Fi can browse, upload, and download files directly in a browser.
+Features include search and sorting in the web UI, ZIP downloads, queued downloads, drag-and-drop uploads, Unicode filename support, and optional password protection for files.
