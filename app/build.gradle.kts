@@ -12,6 +12,21 @@ android {
     namespace = "com.lanshare.app"
     compileSdk = 34
 
+    signingConfigs {
+        if (!ciKeystorePath.isNullOrBlank() &&
+            !ciKeystorePassword.isNullOrBlank() &&
+            !ciKeyAlias.isNullOrBlank() &&
+            !ciKeyPassword.isNullOrBlank()
+        ) {
+            create("release") {
+                storeFile = file(ciKeystorePath)
+                storePassword = ciKeystorePassword
+                keyAlias = ciKeyAlias
+                keyPassword = ciKeyPassword
+            }
+        }
+    }
+
     defaultConfig {
         applicationId = "com.swap.app"
         minSdk = 26
@@ -35,21 +50,6 @@ android {
                 !ciKeyPassword.isNullOrBlank()
             ) {
                 signingConfig = signingConfigs.getByName("release")
-            }
-        }
-    }
-
-    signingConfigs {
-        if (!ciKeystorePath.isNullOrBlank() &&
-            !ciKeystorePassword.isNullOrBlank() &&
-            !ciKeyAlias.isNullOrBlank() &&
-            !ciKeyPassword.isNullOrBlank()
-        ) {
-            create("release") {
-                storeFile = file(ciKeystorePath)
-                storePassword = ciKeystorePassword
-                keyAlias = ciKeyAlias
-                keyPassword = ciKeyPassword
             }
         }
     }
