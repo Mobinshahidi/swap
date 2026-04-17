@@ -190,4 +190,7 @@ settings.gradle.kts
 
 ## License
 
-Private/internal project by default unless you add a LICENSE file.
+This project is licensed under the MIT License.
+
+- Full text: `LICENSE`
+- Copyright: `2026 Mobin Shahidi`
