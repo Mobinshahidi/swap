@@ -27,6 +27,11 @@ android {
         }
     }
 
+    dependenciesInfo {
+	includeInApk = false
+    	includeInBundle = false
+    }
+
     defaultConfig {
         applicationId = "com.swap.app"
         minSdk = 26
