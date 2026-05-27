@@ -27,3 +27,4 @@ captures/
 # Native build intermediates
 .cxx/
 externalNativeBuild/
+fdroid-metadata-com.swap.app.yml
