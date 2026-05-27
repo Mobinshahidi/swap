@@ -1,14 +1,10 @@
 package com.lanshare.app
 
-import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.SharedPreferences
-import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
-import android.os.Environment
 import android.provider.OpenableColumns
 import android.provider.Settings
 import android.util.TypedValue
@@ -26,285 +22,234 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 class MainActivity : Activity() {
-    private lateinit var prefs: SharedPreferences
+private lateinit var prefs: SharedPreferences
 
-    private lateinit var tvUrl: TextView
-    private lateinit var tvSubtitle: TextView
-    private lateinit var tvStatus: TextView
-    private lateinit var tvFolder: TextView
-    private lateinit var tvQrMode: TextView
-    private lateinit var etPort: EditText
-    private lateinit var qrImage: ImageView
+private lateinit var tvUrl: TextView
+private lateinit var tvSubtitle: TextView
+private lateinit var tvStatus: TextView
+private lateinit var tvFolder: TextView
+private lateinit var tvQrMode: TextView
+private lateinit var etPort: EditText
+private lateinit var qrImage: ImageView
 
-    private var currentUrl = ""
-    private var currentTreeUri: String? = null
-    private var askedManageAllFilesOnce = false
-    private val uiScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private var collectJob: Job? = null
+private var currentUrl = ""
+private var currentTreeUri: String? = null
+private val uiScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+private var collectJob: Job? = null
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
+override fun onCreate(savedInstanceState: Bundle?) {
+super.onCreate(savedInstanceState)
+setContentView(R.layout.activity_main)
 
-        prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
-        currentTreeUri = prefs.getString(KEY_FOLDER_URI, null)
+prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+currentTreeUri = prefs.getString(KEY_FOLDER_URI, null)
 
-        tvUrl = findViewById(R.id.tvUrl)
-        tvSubtitle = findViewById(R.id.tvSubtitle)
-        tvStatus = findViewById(R.id.tvStatus)
-        tvFolder = findViewById(R.id.tvFolder)
-        tvQrMode = findViewById(R.id.tvQrMode)
-        etPort = findViewById(R.id.etPort)
-        qrImage = findViewById(R.id.ivQr)
+tvUrl = findViewById(R.id.tvUrl)
+tvSubtitle = findViewById(R.id.tvSubtitle)
+tvStatus = findViewById(R.id.tvStatus)
+tvFolder = findViewById(R.id.tvFolder)
+tvQrMode = findViewById(R.id.tvQrMode)
+etPort = findViewById(R.id.etPort)
+qrImage = findViewById(R.id.ivQr)
 
-        val btnOpenBrowser: Button = findViewById(R.id.btnOpenBrowser)
-        val btnStartServer: Button = findViewById(R.id.btnStartServer)
-        val btnChangeFolder: Button = findViewById(R.id.btnChangeFolder)
-        val btnStopServer: Button = findViewById(R.id.btnStopServer)
-        val btnEnableHotspot: Button = findViewById(R.id.btnEnableHotspot)
+val btnOpenBrowser: Button = findViewById(R.id.btnOpenBrowser)
+val btnStartServer: Button = findViewById(R.id.btnStartServer)
+val btnChangeFolder: Button = findViewById(R.id.btnChangeFolder)
+val btnStopServer: Button = findViewById(R.id.btnStopServer)
+val btnEnableHotspot: Button = findViewById(R.id.btnEnableHotspot)
 
-        val port = prefs.getInt(KEY_PORT, 1390)
-        etPort.setText(port.toString())
-        tvSubtitle.text = getString(R.string.subtitle)
+val port = prefs.getInt(KEY_PORT, 1390)
+etPort.setText(port.toString())
+tvSubtitle.text = getString(R.string.subtitle)
 
-        val storage = StorageAccess(this, currentTreeUri)
-        storage.ensureRootExists()
-        tvFolder.text = storage.displayPath()
-        tvUrl.text = getString(R.string.server_not_running)
-        tvQrMode.text = getString(R.string.qr_mode_none)
-        renderQr("")
-        handleShareIntent(intent)
+val storage = StorageAccess(this, currentTreeUri)
+storage.ensureRootExists()
+tvFolder.text = storage.displayPath()
+tvUrl.text = getString(R.string.server_not_running)
+tvQrMode.text = getString(R.string.qr_mode_none)
+renderQr("")
+handleShareIntent(intent)
 
-        btnOpenBrowser.setOnClickListener {
-            if (currentUrl.isBlank()) {
-                toast("Server URL not ready")
-                return@setOnClickListener
-            }
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(currentUrl)))
-        }
+btnOpenBrowser.setOnClickListener {
+if (currentUrl.isBlank()) {
+toast("Server URL not ready")
+return@setOnClickListener
+}
+startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(currentUrl)))
+}
 
-        btnStartServer.setOnClickListener {
-            val p = etPort.text.toString().trim().toIntOrNull()
-            if (p == null || p !in 1024..65535) {
-                etPort.error = "Port must be 1024-65535"
-                return@setOnClickListener
-            }
-            prefs.edit().putInt(KEY_PORT, p).apply()
-            if (hasRequiredStoragePermission()) {
-                tvQrMode.text = getString(R.string.qr_mode_server)
-                startOrRestartService(p)
-            } else {
-                ensurePermissionAndStart()
-            }
-        }
+btnStartServer.setOnClickListener {
+val p = etPort.text.toString().trim().toIntOrNull()
+if (p == null || p !in 1024..65535) {
+etPort.error = "Port must be 1024-65535"
+return@setOnClickListener
+}
+prefs.edit().putInt(KEY_PORT, p).apply()
+if (!ensureFolderSelected()) return@setOnClickListener
+tvQrMode.text = getString(R.string.qr_mode_server)
+startOrRestartService(p)
+}
 
-        btnStopServer.setOnClickListener {
-            val stopIntent = Intent(this, ServerService::class.java).apply {
-                action = ServerService.ACTION_STOP
-            }
-            runCatching { startService(stopIntent) }
-            currentUrl = ""
-            tvUrl.text = getString(R.string.server_not_running)
-            tvStatus.text = "Status: stopped"
-            tvStatus.setTextColor(resources.getColor(R.color.status_stopped, theme))
-            tvQrMode.text = getString(R.string.qr_mode_none)
-            renderQr("")
-        }
+btnStopServer.setOnClickListener {
+val stopIntent = Intent(this, ServerService::class.java).apply {
+action = ServerService.ACTION_STOP
+}
+runCatching { startService(stopIntent) }
+currentUrl = ""
+tvUrl.text = getString(R.string.server_not_running)
+tvStatus.text = "Status: stopped"
+tvStatus.setTextColor(resources.getColor(R.color.status_stopped, theme))
+tvQrMode.text = getString(R.string.qr_mode_none)
+renderQr("")
+}
 
-        btnEnableHotspot.setOnClickListener {
-            val tetherIntent = Intent("android.settings.TETHER_SETTINGS")
-            val fallbackIntent = Intent(Settings.ACTION_WIRELESS_SETTINGS)
-            runCatching { startActivity(tetherIntent) }
-                .onFailure { runCatching { startActivity(fallbackIntent) } }
-            toast("Open hotspot settings and turn it on")
-        }
+btnEnableHotspot.setOnClickListener {
+val tetherIntent = Intent("android.settings.TETHER_SETTINGS")
+val fallbackIntent = Intent(Settings.ACTION_WIRELESS_SETTINGS)
+runCatching { startActivity(tetherIntent) }
+.onFailure { runCatching { startActivity(fallbackIntent) } }
+toast("Open hotspot settings and turn it on")
+}
 
-        btnChangeFolder.setOnClickListener {
-            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-                addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
-                addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
-            }
-            startActivityForResult(intent, REQ_PICK_FOLDER)
-        }
-    }
+btnChangeFolder.setOnClickListener {
+val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
+}
+startActivityForResult(intent, REQ_PICK_FOLDER)
+}
+}
 
-    override fun onResume() {
-        super.onResume()
-        observeServerState()
-        if (!hasRequiredStoragePermission()) {
-            ensurePermissionAndStart()
-        }
-    }
+override fun onResume() {
+super.onResume()
+observeServerState()
+}
 
-    override fun onNewIntent(intent: Intent?) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        handleShareIntent(intent)
-    }
+override fun onNewIntent(intent: Intent?) {
+super.onNewIntent(intent)
+setIntent(intent)
+handleShareIntent(intent)
+}
 
-    override fun onPause() {
-        collectJob?.cancel()
-        super.onPause()
-    }
+override fun onPause() {
+collectJob?.cancel()
+super.onPause()
+}
 
-    override fun onDestroy() {
-        uiScope.cancel()
-        super.onDestroy()
-    }
+override fun onDestroy() {
+uiScope.cancel()
+super.onDestroy()
+}
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQ_PICK_FOLDER && resultCode == RESULT_OK) {
-            val uri = data?.data ?: return
-            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            runCatching { contentResolver.takePersistableUriPermission(uri, flags) }
-            currentTreeUri = uri.toString()
-            prefs.edit().putString(KEY_FOLDER_URI, currentTreeUri).apply()
-            tvFolder.text = currentTreeUri
-            startOrRestartService()
-            return
-        }
-        if (requestCode == REQ_MANAGE_ALL_FILES) {
-            askedManageAllFilesOnce = false
-            if (hasRequiredStoragePermission()) {
-                toast("Permission granted. Tap Start Server.")
-            } else {
-                toast("All files access is required on Android 11+")
-            }
-        }
-    }
+override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+super.onActivityResult(requestCode, resultCode, data)
+if (requestCode == REQ_PICK_FOLDER && resultCode == RESULT_OK) {
+val uri = data?.data ?: return
+val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+runCatching { contentResolver.takePersistableUriPermission(uri, flags) }
+currentTreeUri = uri.toString()
+prefs.edit().putString(KEY_FOLDER_URI, currentTreeUri).apply()
+tvFolder.text = StorageAccess(this, currentTreeUri).displayPath()
+startOrRestartService()
+return
+}
+}
 
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQ_STORAGE_PERMS) {
-            if (hasRequiredStoragePermission()) {
-                toast("Permission granted. Tap Start Server.")
-            } else {
-                toast("Storage permission is required")
-            }
-        }
-    }
+private fun observeServerState() {
+collectJob?.cancel()
+collectJob = uiScope.launch {
+ServerService.state.collect { state ->
+tvStatus.text = if (state.running) "Status: running" else "Status: stopped"
+tvStatus.setTextColor(resources.getColor(if (state.running) R.color.status_running else R.color.status_stopped, theme))
+currentUrl = state.url
+tvUrl.text = if (state.url.isBlank()) getString(R.string.server_not_running) else state.url
+if (state.folderDisplay.isNotBlank()) tvFolder.text = state.folderDisplay
+tvQrMode.text = if (state.url.isBlank()) getString(R.string.qr_mode_none) else getString(R.string.qr_mode_server)
+renderQr(if (state.url.isBlank()) "" else state.url)
+}
+}
+}
 
-    private fun observeServerState() {
-        collectJob?.cancel()
-        collectJob = uiScope.launch {
-            ServerService.state.collect { state ->
-                tvStatus.text = if (state.running) "Status: running" else "Status: stopped"
-                tvStatus.setTextColor(resources.getColor(if (state.running) R.color.status_running else R.color.status_stopped, theme))
-                currentUrl = state.url
-                tvUrl.text = if (state.url.isBlank()) getString(R.string.server_not_running) else state.url
-                if (state.folderDisplay.isNotBlank()) tvFolder.text = state.folderDisplay
-                tvQrMode.text = if (state.url.isBlank()) getString(R.string.qr_mode_none) else getString(R.string.qr_mode_server)
-                renderQr(if (state.url.isBlank()) "" else state.url)
-            }
-        }
-    }
+private fun ensureFolderSelected(): Boolean {
+if (!currentTreeUri.isNullOrBlank()) return true
+toast("Pick a folder to share first")
+val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
+}
+startActivityForResult(intent, REQ_PICK_FOLDER)
+return false
+}
 
-    private fun ensurePermissionAndStart() {
-        if (hasRequiredStoragePermission()) {
-            return
-        }
+private fun startOrRestartService(forcedPort: Int? = null) {
+val port = forcedPort ?: prefs.getInt(KEY_PORT, 1390)
+val intent = Intent(this, ServerService::class.java).apply {
+action = ServerService.ACTION_RESTART
+putExtra(ServerService.EXTRA_PORT, port)
+putExtra(ServerService.EXTRA_TREE_URI, currentTreeUri)
+}
+runCatching { startForegroundService(intent) }
+.onFailure {
+Log.e("LanShare", "Failed to start foreground service", it)
+toast("Failed to start server service: ${it.message}")
+}
+}
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            if (askedManageAllFilesOnce) return
-            askedManageAllFilesOnce = true
-            val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-                data = Uri.parse("package:$packageName")
-            }
-            startActivityForResult(intent, REQ_MANAGE_ALL_FILES)
-        } else {
-            requestPermissions(
-                arrayOf(
-                    Manifest.permission.READ_EXTERNAL_STORAGE,
-                    Manifest.permission.WRITE_EXTERNAL_STORAGE
-                ),
-                REQ_STORAGE_PERMS
-            )
-        }
-    }
+private fun renderQr(content: String) {
+if (content.isBlank()) {
+qrImage.setImageBitmap(null)
+return
+}
+val px = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 200f, resources.displayMetrics).toInt()
+runCatching { QrCodeGenerator.render(content, px) }
+.onSuccess { qrImage.setImageBitmap(it) }
+.onFailure { qrImage.setImageBitmap(null) }
+}
 
-    private fun hasRequiredStoragePermission(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            Environment.isExternalStorageManager()
-        } else {
-            checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED &&
-                checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
-        }
-    }
+private fun toast(msg: String) {
+Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+}
 
-    private fun startOrRestartService(forcedPort: Int? = null) {
-        val port = forcedPort ?: prefs.getInt(KEY_PORT, 1390)
-        val intent = Intent(this, ServerService::class.java).apply {
-            action = ServerService.ACTION_RESTART
-            putExtra(ServerService.EXTRA_PORT, port)
-            putExtra(ServerService.EXTRA_TREE_URI, currentTreeUri)
-        }
-        runCatching { startForegroundService(intent) }
-            .onFailure {
-                Log.e("LanShare", "Failed to start foreground service", it)
-                toast("Failed to start server service: ${it.message}")
-            }
-    }
+private fun handleShareIntent(incomingIntent: Intent?) {
+if (incomingIntent == null) return
+val action = incomingIntent.action ?: return
+val type = incomingIntent.type ?: return
+if (action != Intent.ACTION_SEND || type.isBlank()) return
+val streamUri = incomingIntent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM) ?: return
+if (currentTreeUri.isNullOrBlank()) {
+toast("Pick a folder to share first")
+return
+}
+val displayName = queryDisplayName(streamUri) ?: "shared_file"
+val bytes = runCatching { contentResolver.openInputStream(streamUri)?.use { it.readBytes() } }.getOrNull() ?: return
+val storage = StorageAccess(this, currentTreeUri)
+if (!storage.ensureRootExists()) {
+toast("Shared folder unavailable")
+return
+}
+val saved = storage.saveFile("", displayName, bytes)
+if (saved != null) {
+toast("Imported: $saved")
+setIntent(Intent())
+}
+}
 
-    private fun renderQr(content: String) {
-        if (content.isBlank()) {
-            qrImage.setImageBitmap(null)
-            return
-        }
-        val px = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 200f, resources.displayMetrics).toInt()
-        runCatching { QrCodeGenerator.render(content, px) }
-            .onSuccess { qrImage.setImageBitmap(it) }
-            .onFailure { qrImage.setImageBitmap(null) }
-    }
+private fun queryDisplayName(uri: Uri): String? {
+val c = contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null) ?: return null
+c.use {
+if (it.moveToFirst()) return it.getString(0)
+}
+return null
+}
 
-    private fun toast(msg: String) {
-        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
-    }
-
-    private fun handleShareIntent(incomingIntent: Intent?) {
-        if (incomingIntent == null) return
-        val action = incomingIntent.action ?: return
-        val type = incomingIntent.type ?: return
-        if (action != Intent.ACTION_SEND || type.isBlank()) return
-        val streamUri = incomingIntent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM) ?: return
-        if (!hasRequiredStoragePermission()) {
-            toast("Grant storage permission first")
-            return
-        }
-        val displayName = queryDisplayName(streamUri) ?: "shared_file"
-        val bytes = runCatching { contentResolver.openInputStream(streamUri)?.use { it.readBytes() } }.getOrNull() ?: return
-        val storage = StorageAccess(this, currentTreeUri)
-        if (!storage.ensureRootExists()) {
-            toast("Shared folder unavailable")
-            return
-        }
-        val saved = storage.saveFile("", displayName, bytes)
-        if (saved != null) {
-            toast("Imported: $saved")
-            setIntent(Intent())
-        }
-    }
-
-    private fun queryDisplayName(uri: Uri): String? {
-        val c = contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null) ?: return null
-        c.use {
-            if (it.moveToFirst()) return it.getString(0)
-        }
-        return null
-    }
-
-    companion object {
-        private const val PREFS = "lan_share_prefs"
-        private const val KEY_PORT = "port"
-        private const val KEY_FOLDER_URI = "folder_uri"
-        private const val REQ_STORAGE_PERMS = 1200
-        private const val REQ_PICK_FOLDER = 1201
-        private const val REQ_MANAGE_ALL_FILES = 1202
-    }
+companion object {
+private const val PREFS = "lan_share_prefs"
+private const val KEY_PORT = "port"
+private const val KEY_FOLDER_URI = "folder_uri"
+private const val REQ_PICK_FOLDER = 1201
+}
 }
