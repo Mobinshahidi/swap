@@ -314,7 +314,7 @@ val cdLine = headers.lineSequence()
 .firstOrNull { it.startsWith("Content-Disposition:", ignoreCase = true) }
 ?: return null
 val cdValue = cdLine.substringAfter(':').trim()
-val filenameStar = Regex("filename\*=(?:UTF-8'')?([^;]+)", RegexOption.IGNORE_CASE)
+val filenameStar = Regex("""filename\*=(?:UTF-8'')?([^;]+)""", RegexOption.IGNORE_CASE)
 .find(cdValue)?.groupValues?.getOrNull(1)
 if (!filenameStar.isNullOrBlank()) {
 return runCatching { URLDecoder.decode(filenameStar.trim().trim('"'), "UTF-8") }.getOrNull()
