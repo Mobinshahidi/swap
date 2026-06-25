@@ -76,6 +76,43 @@
                 android:textSize="14sp"
                 android:fontFamily="@font/jetbrains_mono_bold" />
 
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:fontFamily="@font/jetbrains_mono_regular"
+                android:text="@string/auth_hint"
+                android:textColor="@color/text_muted"
+                android:textSize="12sp" />
+
+            <EditText
+                android:id="@+id/etAuthUser"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:background="@drawable/bg_edittext"
+                android:fontFamily="@font/jetbrains_mono_regular"
+                android:hint="@string/auth_user_hint"
+                android:inputType="text"
+                android:autofillHints="username"
+                android:maxLines="1"
+                android:textColor="@color/text_primary"
+                android:textColorHint="@color/text_muted" />
+
+            <EditText
+                android:id="@+id/etAuthPass"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/bg_edittext"
+                android:fontFamily="@font/jetbrains_mono_regular"
+                android:hint="@string/auth_pass_hint"
+                android:inputType="textPassword"
+                android:autofillHints="password"
+                android:maxLines="1"
+                android:textColor="@color/text_primary"
+                android:textColorHint="@color/text_muted" />
+
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

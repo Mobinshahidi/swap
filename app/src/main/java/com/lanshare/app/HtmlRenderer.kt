@@ -219,11 +219,17 @@ location.reload()                                                               
 }, 3000)                                                                           ;
 
 async function uploadFiles(files) {
-for (const file of files) {
+const list = [...files]                                                             ;
+if (!list.length) return                                                            ;
+// Send every selected file in ONE multipart request. iOS Safari frees Blob
+// handles between sequential XHRs, so a per-file upload loop drops images after
+// the first; a single request keeps every Blob alive for the whole transfer.
 const fd = new FormData()                                                           ;
-fd.append('file', file)                                                             ;
+for (const file of list) fd.append('file', file, file.name)                         ;
 progressWrap.style.display = 'block';
-progressLabel.textContent = `Uploading ${'$'}{file.name}...`;
+progressLabel.textContent = list.length === 1
+? `Uploading ${'$'}{list[0].name}...`
+: `Uploading ${'$'}{list.length} files...`;
 progressBar.style.width = '0%';
 await new Promise((res) => {
 const xhr = new XMLHttpRequest()                                                    ;
@@ -235,7 +241,6 @@ xhr.onload = () => res()                                                        
 xhr.onerror = () => { showToast('Upload failed'); res()                             ; };
 xhr.send(fd)                                                                        ;
 })                                                                                  ;
-}
 progressWrap.style.display = 'none';
 showToast('Upload complete \u2713');
 setTimeout(() => location.reload(), 800)                                            ;

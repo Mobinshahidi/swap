@@ -16,6 +16,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.net.URLDecoder
 import java.nio.charset.Charset
+import java.util.Base64
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.zip.ZipEntry
@@ -24,8 +25,11 @@ import java.util.zip.ZipOutputStream
 class HttpServer(
 private val storage: StorageAccess,
 private val passwordManager: PasswordManager,
-private val port: Int
+private val port: Int,
+private val basicAuthUser: String = "",
+private val basicAuthPassword: String = ""
 ) {
+private val basicAuthEnabled = basicAuthUser.isNotEmpty() || basicAuthPassword.isNotEmpty()
 private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 private var serverSocket: ServerSocket? = null
 private var acceptJob: Job? = null
@@ -75,6 +79,13 @@ writeText(output, 500, "Internal Server Error", "text/plain; charset=utf-8", "In
 private fun route(req: HttpRequest, out: OutputStream) {
 val method = req.method.uppercase(Locale.getDefault())
 val path = req.path
+// Optional server-wide HTTP Basic Auth. This is a cheap header check that
+// gates every request; per-file passwords are handled separately and stay
+// untouched.
+if (basicAuthEnabled && !basicAuthOk(req)) {
+writeUnauthorized(out, method == "HEAD")
+return
+}
 if ((method == "POST") && path.startsWith("/upload")) {
 handleUpload(req, out)
 return
@@ -389,6 +400,43 @@ query[URLDecoder.decode(pair, "UTF-8")] = ""
 }
 }
 return HttpRequest(method, path, query, headers, body)
+}
+
+private fun basicAuthOk(req: HttpRequest): Boolean {
+val header = req.headers["authorization"] ?: return false
+if (!header.regionMatches(0, "Basic ", 0, 6, ignoreCase = true)) return false
+val decoded = try {
+String(Base64.getDecoder().decode(header.substring(6).trim()), Charsets.UTF_8)
+} catch (_: Throwable) {
+return false
+}
+val idx = decoded.indexOf(':')
+if (idx < 0) return false
+val user = decoded.substring(0, idx)
+val pass = decoded.substring(idx + 1)
+return constantTimeEquals(user, basicAuthUser) and constantTimeEquals(pass, basicAuthPassword)
+}
+
+private fun constantTimeEquals(a: String, b: String): Boolean {
+val ab = a.toByteArray(Charsets.UTF_8)
+val bb = b.toByteArray(Charsets.UTF_8)
+var diff = ab.size xor bb.size
+for (i in ab.indices) {
+diff = diff or (ab[i].toInt() xor bb.getOrElse(i) { 0 }.toInt())
+}
+return diff == 0
+}
+
+private fun writeUnauthorized(out: OutputStream, headOnly: Boolean) {
+val body = "Unauthorized".toByteArray(Charsets.UTF_8)
+val headers = linkedMapOf(
+"Content-Type" to "text/plain; charset=utf-8",
+"Content-Length" to body.size.toString(),
+"WWW-Authenticate" to "Basic realm=\"Swap\", charset=\"UTF-8\"",
+"Connection" to "close"
+)
+writeStatusLine(out, 401, "Unauthorized", headers)
+if (!headOnly) out.write(body)
 }
 
 private fun writeJson(out: OutputStream, code: Int, obj: JSONObject) {

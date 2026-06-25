@@ -5,4 +5,7 @@
     <string name="server_not_running">Server not running</string>
     <string name="qr_mode_server">QR mode: Server URL</string>
     <string name="qr_mode_none">QR mode: None</string>
+    <string name="auth_hint">Basic Auth (optional) — protects the whole server</string>
+    <string name="auth_user_hint">Username (leave blank to disable)</string>
+    <string name="auth_pass_hint">Password (leave blank to disable)</string>
 </resources>

@@ -32,6 +32,8 @@ class MainActivity : Activity() {
 	private lateinit var tvFolder: TextView
 	private lateinit var tvQrMode: TextView
 	private lateinit var etPort: EditText
+	private lateinit var etAuthUser: EditText
+	private lateinit var etAuthPass: EditText
 	private lateinit var qrImage: ImageView
 
 	private var currentUrl = ""
@@ -52,6 +54,8 @@ class MainActivity : Activity() {
 		tvFolder = findViewById(R.id.tvFolder)
 		tvQrMode = findViewById(R.id.tvQrMode)
 		etPort = findViewById(R.id.etPort)
+		etAuthUser = findViewById(R.id.etAuthUser)
+		etAuthPass = findViewById(R.id.etAuthPass)
 		qrImage = findViewById(R.id.ivQr)
 
 		val btnOpenBrowser: Button = findViewById(R.id.btnOpenBrowser)
@@ -63,6 +67,8 @@ class MainActivity : Activity() {
 
 		val port = prefs.getInt(KEY_PORT, 1390)
 		etPort.setText(port.toString())
+		etAuthUser.setText(prefs.getString(KEY_AUTH_USER, "") ?: "")
+		etAuthPass.setText(prefs.getString(KEY_AUTH_PASS, "") ?: "")
 		tvSubtitle.text = getString(R.string.subtitle)
 
 		val storage = StorageAccess(this, currentTreeUri)
@@ -87,7 +93,11 @@ class MainActivity : Activity() {
 				etPort.error = "Port must be 1024-65535"
 				return@setOnClickListener
 			}
-			prefs.edit().putInt(KEY_PORT, p).apply()
+			prefs.edit()
+				.putInt(KEY_PORT, p)
+				.putString(KEY_AUTH_USER, etAuthUser.text.toString().trim())
+				.putString(KEY_AUTH_PASS, etAuthPass.text.toString())
+				.apply()
 			if (!ensureFolderSelected()) return@setOnClickListener
 			tvQrMode.text = getString(R.string.qr_mode_server)
 			startOrRestartService(p)
@@ -220,6 +230,8 @@ class MainActivity : Activity() {
 			action = ServerService.ACTION_RESTART
 			putExtra(ServerService.EXTRA_PORT, port)
 			putExtra(ServerService.EXTRA_TREE_URI, currentTreeUri)
+			putExtra(ServerService.EXTRA_AUTH_USER, prefs.getString(KEY_AUTH_USER, "") ?: "")
+			putExtra(ServerService.EXTRA_AUTH_PASS, prefs.getString(KEY_AUTH_PASS, "") ?: "")
 		}
 		runCatching { startForegroundService(intent) }
 			.onFailure {
@@ -279,6 +291,8 @@ class MainActivity : Activity() {
 		private const val PREFS = "lan_share_prefs"
 		private const val KEY_PORT = "port"
 		private const val KEY_FOLDER_URI = "folder_uri"
+		private const val KEY_AUTH_USER = "auth_user"
+		private const val KEY_AUTH_PASS = "auth_pass"
 		private const val REQ_PICK_FOLDER = 1201
 	}
 }

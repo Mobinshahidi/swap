@@ -42,6 +42,8 @@ class ServerService : Service() {
         const val ACTION_RESTART = "com.lanshare.app.RESTART"
         const val EXTRA_PORT = "extra_port"
         const val EXTRA_TREE_URI = "extra_tree_uri"
+        const val EXTRA_AUTH_USER = "extra_auth_user"
+        const val EXTRA_AUTH_PASS = "extra_auth_pass"
 
         private val _state = MutableStateFlow(ServerUiState())
         val state: StateFlow<ServerUiState> = _state.asStateFlow()
@@ -58,7 +60,9 @@ class ServerService : Service() {
             ACTION_START, ACTION_RESTART -> {
                 val port = intent?.getIntExtra(EXTRA_PORT, 1390) ?: 1390
                 val treeUri = intent?.getStringExtra(EXTRA_TREE_URI)
-                restartServer(port, treeUri)
+                val authUser = intent?.getStringExtra(EXTRA_AUTH_USER).orEmpty()
+                val authPass = intent?.getStringExtra(EXTRA_AUTH_PASS).orEmpty()
+                restartServer(port, treeUri, authUser, authPass)
             }
         }
         return START_STICKY
@@ -69,7 +73,7 @@ class ServerService : Service() {
         super.onDestroy()
     }
 
-    private fun restartServer(port: Int, treeUri: String?) {
+    private fun restartServer(port: Int, treeUri: String?, authUser: String = "", authPass: String = "") {
         serverJob?.cancel()
         serverJob = serviceScope.launch {
             stopServerOnly()
@@ -87,7 +91,7 @@ class ServerService : Service() {
                 return@launch
             }
             val pm = PasswordManager(storage)
-            server = HttpServer(storage, pm, port)
+            server = HttpServer(storage, pm, port, authUser, authPass)
             runCatching { server?.start() }
                 .onSuccess {
                     val ip = resolveBestIpAddress() ?: "127.0.0.1"
