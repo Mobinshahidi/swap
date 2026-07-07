@@ -206,17 +206,13 @@ updateToolbar()                                                        ;
 searchInput && searchInput.addEventListener('input', rebuildRows) ;
 sortSelect && sortSelect.addEventListener('change', rebuildRows)  ;
 
-setInterval(async () => {
+// Live updates over a single held-open Server-Sent Events connection instead
+// of reconnecting to poll every few seconds. The server pushes 'reload' when
+// this folder changes; EventSource reconnects on its own if the link drops.
 try {
-const r = await fetch(window.location.href, { method: 'HEAD', cache: 'no-store' }) ;
-const stamp = r.headers.get('x-swap-snapshot') || '';
-if (!window.__swapStamp) {
-window.__swapStamp = stamp                                                         ;
-} else if (stamp && window.__swapStamp !== stamp) {
-location.reload()                                                                  ;
-}
+const es = new EventSource('/__events' + location.pathname)                        ;
+es.onmessage = (e) => { if (e.data === 'reload') location.reload()                 ; };
 } catch (e) {}
-}, 3000)                                                                           ;
 
 async function uploadFiles(files) {
 const list = [...files]                                                             ;

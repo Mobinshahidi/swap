@@ -8,12 +8,14 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.SocketTimeoutException
 import java.net.URLDecoder
 import java.nio.charset.Charset
 import java.util.Base64
@@ -29,6 +31,16 @@ private val port: Int,
 private val basicAuthUser: String = "",
 private val basicAuthPassword: String = ""
 ) {
+private companion object {
+// Close a kept-alive connection that has been idle this long, and use the
+// same window as the advertised Keep-Alive timeout.
+const val IDLE_TIMEOUT_MS = 20_000
+const val KEEP_ALIVE_HEADER = "timeout=20"
+// SSE change-detection cadence and heartbeat interval.
+const val SSE_POLL_MS = 1_500L
+const val SSE_HEARTBEAT_MS = 20_000L
+}
+
 private val basicAuthEnabled = basicAuthUser.isNotEmpty() || basicAuthPassword.isNotEmpty()
 private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 private var serverSocket: ServerSocket? = null
@@ -47,10 +59,6 @@ serverSocket?.accept()
 null
 }
 if (socket != null) {
-// Disable Nagle's algorithm so the status line, headers, and body are not
-// held back waiting on delayed ACKs. Over a power-saving Wi-Fi link those
-// per-write stalls compound into seconds.
-runCatching { socket.tcpNoDelay = true }
 launch { handleClient(socket) }
 }
 }
@@ -69,51 +77,93 @@ scope.cancel()
 
 private fun handleClient(socket: Socket) {
 socket.use { s ->
+// Disable Nagle so the status line, headers, and body are not held back on
+// delayed ACKs (those stalls compound to seconds over a power-saving link),
+// and reap idle kept-alive sockets after IDLE_TIMEOUT_MS.
+runCatching {
+s.tcpNoDelay = true
+s.soTimeout = IDLE_TIMEOUT_MS
+}
 val input = BufferedInputStream(s.getInputStream())
-val output = s.getOutputStream()
-val req = readRequest(input) ?: return
-try {
-route(req, output)
+val output = BufferedOutputStream(s.getOutputStream(), 64 * 1024)
+// HTTP/1.1 keep-alive: serve requests on this one socket until the client
+// asks to close, a response cannot be framed for reuse, or the socket goes
+// idle. Reusing the connection avoids a fresh (multi-second) TCP handshake
+// per request.
+while (running.get()) {
+val req = try {
+readRequest(input)
+} catch (_: SocketTimeoutException) {
+null
 } catch (_: Throwable) {
-writeText(output, 500, "Internal Server Error", "text/plain; charset=utf-8", "Internal Server Error", req.method == "HEAD")
+null
+} ?: break
+val keepAlive = wantsKeepAlive(req)
+val shouldClose = try {
+route(req, output, keepAlive)
+} catch (_: Throwable) {
+runCatching {
+writeText(output, 500, "Internal Server Error", "text/plain; charset=utf-8", "Internal Server Error", req.method == "HEAD", false)
+}
+true
+}
+runCatching { output.flush() }
+if (shouldClose || !keepAlive) break
 }
 }
 }
 
-private fun route(req: HttpRequest, out: OutputStream) {
+private fun wantsKeepAlive(req: HttpRequest): Boolean {
+val connection = req.headers["connection"]?.lowercase(Locale.getDefault()) ?: ""
+if (connection.contains("close")) return false
+if (connection.contains("keep-alive")) return true
+// Default: HTTP/1.1 keeps the connection alive, HTTP/1.0 closes it.
+return !req.version.endsWith("1.0")
+}
+
+// Handles one request. Returns true when the connection must be closed
+// afterwards (unframed/streamed response), false when it may be kept alive.
+private fun route(req: HttpRequest, out: OutputStream, keepAlive: Boolean): Boolean {
 val method = req.method.uppercase(Locale.getDefault())
 val path = req.path
 // Optional server-wide HTTP Basic Auth. This is a cheap header check that
 // gates every request; per-file passwords are handled separately and stay
 // untouched.
 if (basicAuthEnabled && !basicAuthOk(req)) {
-writeUnauthorized(out, method == "HEAD")
-return
+writeUnauthorized(out, method == "HEAD", keepAlive)
+return !keepAlive
 }
 if ((method == "POST") && path.startsWith("/upload")) {
-handleUpload(req, out)
-return
+handleUpload(req, out, keepAlive)
+return !keepAlive
 }
 if ((method == "POST") && path.startsWith("/paste")) {
-handlePaste(req, out)
-return
+handlePaste(req, out, keepAlive)
+return !keepAlive
 }
 if ((method == "POST") && path.startsWith("/zip")) {
 handleZip(req, out)
-return
+// Zip is streamed without a Content-Length, so the socket must close to
+// mark the end of the body.
+return true
+}
+if (method == "GET" && path.startsWith("/__events")) {
+handleEvents(req, out)
+return true
 }
 if (method == "GET" || method == "HEAD") {
-handleGetOrHead(req, out)
-return
+handleGetOrHead(req, out, keepAlive)
+return !keepAlive
 }
-writeText(out, 405, "Method Not Allowed", "text/plain; charset=utf-8", "Method Not Allowed", method == "HEAD")
+writeText(out, 405, "Method Not Allowed", "text/plain; charset=utf-8", "Method Not Allowed", method == "HEAD", keepAlive)
+return !keepAlive
 }
 
-private fun handleGetOrHead(req: HttpRequest, out: OutputStream) {
+private fun handleGetOrHead(req: HttpRequest, out: OutputStream, keepAlive: Boolean) {
 val decodedPath = decodeRequestPath(req.path)
 val relative = decodedPath.trim('/').trim()
 if (relative == ".passwords.json" || relative.startsWith(".passwords.json/")) {
-writeText(out, 403, "Forbidden", "text/plain; charset=utf-8", "Forbidden", req.method == "HEAD")
+writeText(out, 403, "Forbidden", "text/plain; charset=utf-8", "Forbidden", req.method == "HEAD", keepAlive)
 return
 }
 
@@ -125,16 +175,16 @@ val body = html.toByteArray(Charsets.UTF_8)
 val headers = linkedMapOf(
 "Content-Type" to "text/html; charset=utf-8",
 "Content-Length" to body.size.toString(),
-"X-Swap-Snapshot" to snapshotOf(files),
-"Connection" to "close"
+"X-Swap-Snapshot" to snapshotOf(files)
 )
+applyConnectionHeaders(headers, keepAlive)
 writeStatusLine(out, 200, "OK", headers)
 if (req.method != "HEAD") out.write(body)
 return
 }
 
 if (!storage.existsFile(relative)) {
-writeText(out, 404, "Not Found", "text/plain; charset=utf-8", "Not Found", req.method == "HEAD")
+writeText(out, 404, "Not Found", "text/plain; charset=utf-8", "Not Found", req.method == "HEAD", keepAlive)
 return
 }
 
@@ -143,7 +193,7 @@ if (isProtected) {
 val pw = req.query["pw"]
 val ok = kotlinx.coroutines.runBlocking { passwordManager.verify(relative, pw) }
 if (!ok) {
-writeText(out, 401, "Unauthorized", "text/plain; charset=utf-8", "Unauthorized", req.method == "HEAD")
+writeText(out, 401, "Unauthorized", "text/plain; charset=utf-8", "Unauthorized", req.method == "HEAD", keepAlive)
 return
 }
 }
@@ -154,44 +204,44 @@ val size = storage.fileSize(relative)
 val headers = linkedMapOf(
 "Content-Type" to mime,
 "Content-Disposition" to FileUtils.contentDisposition(fileName),
-"Content-Length" to size.toString(),
-"Connection" to "close"
+"Content-Length" to size.toString()
 )
+applyConnectionHeaders(headers, keepAlive)
 writeStatusLine(out, 200, "OK", headers)
 if (req.method != "HEAD") {
-storage.openInput(relative)?.use { it.copyTo(out) }
+storage.openInput(relative)?.use { it.copyTo(out, 64 * 1024) }
 }
 }
 
-private fun handleUpload(req: HttpRequest, out: OutputStream) {
+private fun handleUpload(req: HttpRequest, out: OutputStream, keepAlive: Boolean) {
 val targetPath = decodeRequestPath(req.path.removePrefix("/upload")).trim('/')
 if (!storage.isDirectory(targetPath)) {
-writeJson(out, 404, JSONObject().put("error", "target not found"))
+writeJson(out, 404, JSONObject().put("error", "target not found"), keepAlive)
 return
 }
 val ct = req.headers["content-type"] ?: ""
 val boundary = extractBoundary(ct)
 if (boundary.isNullOrBlank()) {
-writeJson(out, 400, JSONObject().put("error", "missing boundary"))
+writeJson(out, 400, JSONObject().put("error", "missing boundary"), keepAlive)
 return
 }
 val saved = parseMultipart(req.body, boundary).count { part ->
 val name = part.filename ?: return@count false
 storage.saveFile(targetPath, name, part.content) != null
 }
-writeJson(out, 200, JSONObject().put("saved", saved))
+writeJson(out, 200, JSONObject().put("saved", saved), keepAlive)
 }
 
-private fun handlePaste(req: HttpRequest, out: OutputStream) {
+private fun handlePaste(req: HttpRequest, out: OutputStream, keepAlive: Boolean) {
 val targetPath = decodeRequestPath(req.path.removePrefix("/paste")).trim('/')
 if (!storage.isDirectory(targetPath)) {
-writeJson(out, 404, JSONObject().put("error", "target not found"))
+writeJson(out, 404, JSONObject().put("error", "target not found"), keepAlive)
 return
 }
 val obj = try {
 JSONObject(req.body.toString(Charsets.UTF_8))
 } catch (_: Throwable) {
-writeJson(out, 400, JSONObject().put("error", "bad json"))
+writeJson(out, 400, JSONObject().put("error", "bad json"), keepAlive)
 return
 }
 val filenameRaw = obj.optString("filename", "note.txt")
@@ -200,7 +250,7 @@ val password = obj.optString("password", "")
 val filename = if (filenameRaw.endsWith(".txt")) filenameRaw else "$filenameRaw.txt"
 val saved = storage.saveText(targetPath, filename, text)
 if (saved == null) {
-writeJson(out, 500, JSONObject().put("error", "save failed"))
+writeJson(out, 500, JSONObject().put("error", "save failed"), keepAlive)
 return
 }
 val rel = if (targetPath.isBlank()) saved else "$targetPath/$saved"
@@ -208,13 +258,53 @@ kotlinx.coroutines.runBlocking {
 if (password.isNotEmpty()) passwordManager.setPassword(rel, password)
 else passwordManager.setPassword(rel, "")
 }
-writeJson(out, 200, JSONObject().put("saved", saved))
+writeJson(out, 200, JSONObject().put("saved", saved), keepAlive)
+}
+
+// Server-Sent Events stream: one held-open connection per open tab, replacing
+// the old 3-second HEAD polling. Emits "reload" whenever the directory snapshot
+// changes, with periodic heartbeat comments to keep the connection alive.
+private fun handleEvents(req: HttpRequest, out: OutputStream) {
+val relative = decodeRequestPath(req.path.removePrefix("/__events")).trim('/')
+val headers = linkedMapOf(
+"Content-Type" to "text/event-stream; charset=utf-8",
+"Cache-Control" to "no-cache",
+"Connection" to "close"
+)
+writeStatusLine(out, 200, "OK", headers)
+out.write(":connected\n\n".toByteArray(Charsets.UTF_8))
+out.flush()
+var lastSnapshot = currentSnapshot(relative)
+var idleMs = 0L
+while (running.get()) {
+Thread.sleep(SSE_POLL_MS)
+val snapshot = currentSnapshot(relative)
+if (snapshot != lastSnapshot) {
+lastSnapshot = snapshot
+// A write throws once the client disconnects; that propagates up to
+// handleClient, which closes the socket.
+out.write("data: reload\n\n".toByteArray(Charsets.UTF_8))
+out.flush()
+idleMs = 0
+} else {
+idleMs += SSE_POLL_MS
+if (idleMs >= SSE_HEARTBEAT_MS) {
+out.write(":ping\n\n".toByteArray(Charsets.UTF_8))
+out.flush()
+idleMs = 0
+}
+}
+}
+}
+
+private fun currentSnapshot(relative: String): String {
+return if (storage.isDirectory(relative)) snapshotOf(storage.listEntries(relative)) else ""
 }
 
 private fun handleZip(req: HttpRequest, out: OutputStream) {
 val targetPath = decodeRequestPath(req.path.removePrefix("/zip")).trim('/')
 if (!storage.isDirectory(targetPath)) {
-writeText(out, 404, "Not Found", "text/plain; charset=utf-8", "Not Found", false)
+writeText(out, 404, "Not Found", "text/plain; charset=utf-8", "Not Found", false, false)
 return
 }
 
@@ -223,7 +313,7 @@ val names = parseFormFields(body, "files")
 val protected = kotlinx.coroutines.runBlocking { passwordManager.protectedFiles() }
 val sources = storage.collectZipSources(targetPath, names) { rel -> rel in protected || rel == ".passwords.json" }
 if (sources.isEmpty()) {
-writeText(out, 404, "Not Found", "text/plain; charset=utf-8", "Nothing to zip", false)
+writeText(out, 404, "Not Found", "text/plain; charset=utf-8", "Nothing to zip", false, false)
 return
 }
 
@@ -368,6 +458,7 @@ val reqLine = lines.first().split(' ')
 if (reqLine.size < 2) return null
 val method = reqLine[0].uppercase(Locale.getDefault())
 val target = reqLine[1]
+val version = reqLine.getOrNull(2)?.uppercase(Locale.getDefault()) ?: "HTTP/1.1"
 val path = target.substringBefore('?')
 val queryRaw = target.substringAfter('?', "")
 val headers = mutableMapOf<String, String>()
@@ -403,7 +494,7 @@ query[URLDecoder.decode(pair, "UTF-8")] = ""
 }
 }
 }
-return HttpRequest(method, path, query, headers, body)
+return HttpRequest(method, path, query, headers, body, version)
 }
 
 private fun basicAuthOk(req: HttpRequest): Boolean {
@@ -431,31 +522,40 @@ diff = diff or (ab[i].toInt() xor bb.getOrElse(i) { 0 }.toInt())
 return diff == 0
 }
 
-private fun writeUnauthorized(out: OutputStream, headOnly: Boolean) {
+private fun writeUnauthorized(out: OutputStream, headOnly: Boolean, keepAlive: Boolean) {
 val body = "Unauthorized".toByteArray(Charsets.UTF_8)
 val headers = linkedMapOf(
 "Content-Type" to "text/plain; charset=utf-8",
 "Content-Length" to body.size.toString(),
-"WWW-Authenticate" to "Basic realm=\"Swap\", charset=\"UTF-8\"",
-"Connection" to "close"
+"WWW-Authenticate" to "Basic realm=\"Swap\", charset=\"UTF-8\""
 )
+applyConnectionHeaders(headers, keepAlive)
 writeStatusLine(out, 401, "Unauthorized", headers)
 if (!headOnly) out.write(body)
 }
 
-private fun writeJson(out: OutputStream, code: Int, obj: JSONObject) {
-writeText(out, code, reason(code), "application/json; charset=utf-8", obj.toString(), false)
+private fun writeJson(out: OutputStream, code: Int, obj: JSONObject, keepAlive: Boolean) {
+writeText(out, code, reason(code), "application/json; charset=utf-8", obj.toString(), false, keepAlive)
 }
 
-private fun writeText(out: OutputStream, code: Int, reason: String, type: String, content: String, headOnly: Boolean) {
+private fun writeText(out: OutputStream, code: Int, reason: String, type: String, content: String, headOnly: Boolean, keepAlive: Boolean) {
 val body = content.toByteArray(Charsets.UTF_8)
 val headers = linkedMapOf(
 "Content-Type" to type,
-"Content-Length" to body.size.toString(),
-"Connection" to "close"
+"Content-Length" to body.size.toString()
 )
+applyConnectionHeaders(headers, keepAlive)
 writeStatusLine(out, code, reason, headers)
 if (!headOnly) out.write(body)
+}
+
+private fun applyConnectionHeaders(headers: MutableMap<String, String>, keepAlive: Boolean) {
+if (keepAlive) {
+headers["Connection"] = "keep-alive"
+headers["Keep-Alive"] = KEEP_ALIVE_HEADER
+} else {
+headers["Connection"] = "close"
+}
 }
 
 private fun writeStatusLine(out: OutputStream, code: Int, reason: String, headers: Map<String, String>) {
@@ -499,6 +599,7 @@ val method: String,
 val path: String,
 val query: Map<String, String>,
 val headers: Map<String, String>,
-val body: ByteArray
+val body: ByteArray,
+val version: String
 )
 }
