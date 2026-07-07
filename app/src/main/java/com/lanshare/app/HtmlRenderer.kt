@@ -206,13 +206,19 @@ updateToolbar()                                                        ;
 searchInput && searchInput.addEventListener('input', rebuildRows) ;
 sortSelect && sortSelect.addEventListener('change', rebuildRows)  ;
 
-// Live updates over a single held-open Server-Sent Events connection instead
-// of reconnecting to poll every few seconds. The server pushes 'reload' when
-// this folder changes; EventSource reconnects on its own if the link drops.
+// Live updates by polling a tiny snapshot token over the reused keep-alive
+// connection. fetch() carries cached Basic-Auth credentials automatically and,
+// unlike EventSource, a background 401 never re-opens the login dialog.
+let __swapSnap = null                                                              ;
+setInterval(async () => {
 try {
-const es = new EventSource('/__events' + location.pathname)                        ;
-es.onmessage = (e) => { if (e.data === 'reload') location.reload()                 ; };
+const r = await fetch('/__snapshot' + location.pathname, { cache: 'no-store' })    ;
+if (!r.ok) return                                                                  ;
+const s = await r.text()                                                           ;
+if (__swapSnap === null) __swapSnap = s                                            ;
+else if (s !== __swapSnap) location.reload()                                        ;
 } catch (e) {}
+}, 4000)                                                                           ;
 
 async function uploadFiles(files) {
 const list = [...files]                                                             ;

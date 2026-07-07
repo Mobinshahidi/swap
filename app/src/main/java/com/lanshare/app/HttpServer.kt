@@ -36,9 +36,6 @@ private companion object {
 // same window as the advertised Keep-Alive timeout.
 const val IDLE_TIMEOUT_MS = 20_000
 const val KEEP_ALIVE_HEADER = "timeout=20"
-// SSE change-detection cadence and heartbeat interval.
-const val SSE_POLL_MS = 1_500L
-const val SSE_HEARTBEAT_MS = 20_000L
 }
 
 private val basicAuthEnabled = basicAuthUser.isNotEmpty() || basicAuthPassword.isNotEmpty()
@@ -147,9 +144,10 @@ handleZip(req, out)
 // mark the end of the body.
 return true
 }
-if (method == "GET" && path.startsWith("/__events")) {
-handleEvents(req, out)
-return true
+if (method == "GET" && path.startsWith("/__snapshot")) {
+val rel = decodeRequestPath(path.removePrefix("/__snapshot")).trim('/')
+writeText(out, 200, "OK", "text/plain; charset=utf-8", currentSnapshot(rel), false, keepAlive)
+return !keepAlive
 }
 if (method == "GET" || method == "HEAD") {
 handleGetOrHead(req, out, keepAlive)
@@ -261,42 +259,9 @@ else passwordManager.setPassword(rel, "")
 writeJson(out, 200, JSONObject().put("saved", saved), keepAlive)
 }
 
-// Server-Sent Events stream: one held-open connection per open tab, replacing
-// the old 3-second HEAD polling. Emits "reload" whenever the directory snapshot
-// changes, with periodic heartbeat comments to keep the connection alive.
-private fun handleEvents(req: HttpRequest, out: OutputStream) {
-val relative = decodeRequestPath(req.path.removePrefix("/__events")).trim('/')
-val headers = linkedMapOf(
-"Content-Type" to "text/event-stream; charset=utf-8",
-"Cache-Control" to "no-cache",
-"Connection" to "close"
-)
-writeStatusLine(out, 200, "OK", headers)
-out.write(":connected\n\n".toByteArray(Charsets.UTF_8))
-out.flush()
-var lastSnapshot = currentSnapshot(relative)
-var idleMs = 0L
-while (running.get()) {
-Thread.sleep(SSE_POLL_MS)
-val snapshot = currentSnapshot(relative)
-if (snapshot != lastSnapshot) {
-lastSnapshot = snapshot
-// A write throws once the client disconnects; that propagates up to
-// handleClient, which closes the socket.
-out.write("data: reload\n\n".toByteArray(Charsets.UTF_8))
-out.flush()
-idleMs = 0
-} else {
-idleMs += SSE_POLL_MS
-if (idleMs >= SSE_HEARTBEAT_MS) {
-out.write(":ping\n\n".toByteArray(Charsets.UTF_8))
-out.flush()
-idleMs = 0
-}
-}
-}
-}
-
+// Cheap change-detection token for the folder-change poller. Returns the same
+// snapshot string embedded in the page, so the client can detect changes with a
+// tiny GET instead of a held-open connection.
 private fun currentSnapshot(relative: String): String {
 return if (storage.isDirectory(relative)) snapshotOf(storage.listEntries(relative)) else ""
 }
