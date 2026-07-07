@@ -47,6 +47,10 @@ serverSocket?.accept()
 null
 }
 if (socket != null) {
+// Disable Nagle's algorithm so the status line, headers, and body are not
+// held back waiting on delayed ACKs. Over a power-saving Wi-Fi link those
+// per-write stalls compound into seconds.
+runCatching { socket.tcpNoDelay = true }
 launch { handleClient(socket) }
 }
 }

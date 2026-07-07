@@ -10,6 +10,7 @@ import android.content.Intent
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -35,6 +36,8 @@ class ServerService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var server: HttpServer? = null
     private var serverJob: Job? = null
+    private var wifiLock: WifiManager.WifiLock? = null
+    private var wakeLock: PowerManager.WakeLock? = null
 
     companion object {
         const val ACTION_START = "com.lanshare.app.START"
@@ -94,6 +97,7 @@ class ServerService : Service() {
             server = HttpServer(storage, pm, port, authUser, authPass)
             runCatching { server?.start() }
                 .onSuccess {
+                    acquireLocks()
                     val ip = resolveBestIpAddress() ?: "127.0.0.1"
                     val url = "http://$ip:$port"
                     _state.value = ServerUiState(
@@ -126,7 +130,43 @@ class ServerService : Service() {
     private fun stopServerOnly() {
         runCatching { server?.stop() }
         server = null
+        releaseLocks()
         _state.value = _state.value.copy(running = false, status = "stopped", url = "")
+    }
+
+    // Keep the Wi-Fi radio out of power-save and the CPU awake while the server
+    // is up. Without these, the device's radio sleeps between packets once the
+    // screen is off, adding seconds of latency to every request round-trip.
+    private fun acquireLocks() {
+        runCatching {
+            if (wifiLock == null) {
+                val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                } else {
+                    @Suppress("DEPRECATION")
+                    WifiManager.WIFI_MODE_FULL_HIGH_PERF
+                }
+                wifiLock = wm?.createWifiLock(mode, "swap:wifi")?.apply {
+                    setReferenceCounted(false)
+                    acquire()
+                }
+            }
+            if (wakeLock == null) {
+                val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
+                wakeLock = pm?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "swap:cpu")?.apply {
+                    setReferenceCounted(false)
+                    acquire()
+                }
+            }
+        }
+    }
+
+    private fun releaseLocks() {
+        runCatching { if (wifiLock?.isHeld == true) wifiLock?.release() }
+        runCatching { if (wakeLock?.isHeld == true) wakeLock?.release() }
+        wifiLock = null
+        wakeLock = null
     }
 
     private fun notification(): Notification {
