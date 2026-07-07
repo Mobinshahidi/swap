@@ -129,20 +129,67 @@ return out
 private fun listEntriesSaf(clean: String): List<FileEntry> {
 val dirUri = if (clean.isBlank()) rootDocUri() else resolveSafUri(clean)
 if (dirUri == null || !isDocumentTreeDir(dirUri)) return emptyList()
-val children = listChildren(dirUri)
-return children
-.filter { nameOf(it) != ".passwords.json" }
-.sortedWith(compareBy<Uri> { !isDocumentTreeDir(it) }.thenBy { (nameOf(it) ?: "").lowercase(Locale.getDefault()) })
-.mapNotNull { uri ->
-val name = nameOf(uri) ?: return@mapNotNull null
+// A single SAF cursor returns name/type/size/mtime for every child at once.
+// The previous code issued per-file metadata queries (and re-walked the tree
+// for each file's size), which made large folders take many seconds.
+return listChildDocs(dirUri)
+.asSequence()
+.filter { it.name != ".passwords.json" }
+.sortedWith(compareBy<ChildDoc> { !it.isDirectory }.thenBy { it.name.lowercase(Locale.getDefault()) })
+.map { child ->
 FileEntry(
-name = name,
-isDirectory = isDocumentTreeDir(uri),
-size = if (isDocumentTreeDir(uri)) 0L else fileSize(joinPath(clean, name)),
-relativePath = joinPath(clean, name),
-modifiedAt = lastModifiedOf(uri)
+name = child.name,
+isDirectory = child.isDirectory,
+size = if (child.isDirectory) 0L else child.size,
+relativePath = joinPath(clean, child.name),
+modifiedAt = child.modified
 )
 }
+.toList()
+}
+
+private data class ChildDoc(
+val uri: Uri,
+val name: String,
+val isDirectory: Boolean,
+val size: Long,
+val modified: Long
+)
+
+// Lists a directory's children reading all display columns in ONE query, so
+// building a folder view costs a single SAF IPC regardless of item count.
+private fun listChildDocs(dirUri: Uri): List<ChildDoc> {
+val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(dirUri, DocumentsContract.getDocumentId(dirUri))
+val cursor = context.contentResolver.query(
+childrenUri,
+arrayOf(
+DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+DocumentsContract.Document.COLUMN_MIME_TYPE,
+DocumentsContract.Document.COLUMN_SIZE,
+DocumentsContract.Document.COLUMN_LAST_MODIFIED
+),
+null,
+null,
+null
+) ?: return emptyList()
+val docs = mutableListOf<ChildDoc>()
+cursor.use {
+val idIdx = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+val nameIdx = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+val mimeIdx = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
+val sizeIdx = it.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
+val modIdx = it.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+while (it.moveToNext()) {
+val docId = it.getString(idIdx) ?: continue
+val name = it.getString(nameIdx) ?: continue
+val isDir = it.getString(mimeIdx) == DocumentsContract.Document.MIME_TYPE_DIR
+val size = if (sizeIdx >= 0 && !it.isNull(sizeIdx)) it.getLong(sizeIdx) else 0L
+val modified = if (modIdx >= 0 && !it.isNull(modIdx)) it.getLong(modIdx) else 0L
+docs.add(ChildDoc(DocumentsContract.buildDocumentUriUsingTree(dirUri, docId), name, isDir, size, modified))
+}
+}
+return docs
 }
 
 private fun saveFileSaf(relativeDir: String, desiredName: String, bytes: ByteArray): String? {
@@ -167,16 +214,16 @@ i++
 }
 
 private fun collectDirSaf(dirUri: Uri, prefix: String, baseDir: String, out: MutableList<ZipSource>, skip: (String) -> Boolean) {
-listChildren(dirUri).sortedBy { nameOf(it)?.lowercase(Locale.getDefault()) ?: "" }.forEach { childUri ->
-val childName = nameOf(childUri) ?: return@forEach
+listChildDocs(dirUri).sortedBy { it.name.lowercase(Locale.getDefault()) }.forEach { child ->
+val childName = child.name
 val nextPrefix = "$prefix/$childName"
 val rel = joinPath(baseDir, nextPrefix)
 if (childName == ".passwords.json" || skip(rel)) return@forEach
-if (isDocumentTreeDir(childUri)) {
-collectDirSaf(childUri, nextPrefix, baseDir, out, skip)
+if (child.isDirectory) {
+collectDirSaf(child.uri, nextPrefix, baseDir, out, skip)
 } else {
 out.add(ZipSource(nextPrefix) {
-context.contentResolver.openInputStream(childUri) ?: ByteArrayInputStream(ByteArray(0))
+context.contentResolver.openInputStream(child.uri) ?: ByteArrayInputStream(ByteArray(0))
 })
 }
 }
@@ -210,40 +257,23 @@ current = next
 return current
 }
 
-private fun listChildren(dirUri: Uri): List<Uri> {
-val childDocs = mutableListOf<Uri>()
-val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(dirUri, DocumentsContract.getDocumentId(dirUri))
+private fun findChild(parentUri: Uri, name: String): Uri? {
+val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(parentUri, DocumentsContract.getDocumentId(parentUri))
 val cursor = context.contentResolver.query(
 childrenUri,
-arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID),
-null,
-null,
-null
-) ?: return emptyList()
-cursor.use {
-while (it.moveToNext()) {
-val docId = it.getString(0)
-childDocs.add(DocumentsContract.buildDocumentUriUsingTree(dirUri, docId))
-}
-}
-return childDocs
-}
-
-private fun findChild(parentUri: Uri, name: String): Uri? {
-val children = listChildren(parentUri)
-return children.firstOrNull { nameOf(it) == name }
-}
-
-private fun nameOf(uri: Uri): String? {
-val cursor = context.contentResolver.query(
-uri,
-arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME),
 null,
 null,
 null
 ) ?: return null
 cursor.use {
-if (it.moveToFirst()) return it.getString(0)
+val idIdx = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+val nameIdx = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+while (it.moveToNext()) {
+if (it.getString(nameIdx) == name) {
+return DocumentsContract.buildDocumentUriUsingTree(parentUri, it.getString(idIdx))
+}
+}
 }
 return null
 }
@@ -260,20 +290,6 @@ cursor.use {
 if (it.moveToFirst()) return it.getString(0)
 }
 return null
-}
-
-private fun lastModifiedOf(uri: Uri): Long {
-val cursor = context.contentResolver.query(
-uri,
-arrayOf(DocumentsContract.Document.COLUMN_LAST_MODIFIED),
-null,
-null,
-null
-) ?: return 0L
-cursor.use {
-if (it.moveToFirst()) return it.getLong(0)
-}
-return 0L
 }
 
 private fun isDocumentTreeDir(uri: Uri): Boolean {
