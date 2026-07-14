@@ -22,7 +22,9 @@ The app is a single Activity that configures a port and shared folder, then star
 `ServerService` holds a partial `WakeLock` + Wi-Fi `WifiLock` for the server's lifetime so the phone's CPU/radio don't enter power-save while serving (this is what keeps LAN latency in the millisecond range instead of seconds). The server keeps each browser connection alive (HTTP/1.1 keep-alive) and serves multiple requests per socket. The web UI detects folder changes by polling a tiny `/__snapshot` token every 4s over that reused connection (no held-open streams), and reloads when the token changes.
 
 ### File Map
-- `app/src/main/java/com/lanshare/app/MainActivity.kt` (~298 lines) — UI: URL/status display, port input, start/stop/restart, SAF folder picker, open-in-browser, QR mode, hotspot shortcut.
+- `app/src/main/java/com/lanshare/app/MainActivity.kt` — Minimal main screen: URL + mDNS address, QR, status, Start/Restart, Stop, Open-in-browser, Settings button, share-intent import.
+- `app/src/main/java/com/lanshare/app/SettingsActivity.kt` — Settings screen: port, Basic-Auth user/pass, change folder (SAF picker), hotspot shortcut, check-for-updates (GitHub releases API), GitHub link, native theme (accent/bg/text hex, persisted in prefs).
+- `app/src/main/java/com/lanshare/app/AppTheme.kt` / `AppPrefs.kt` — Custom app theming applied via view tags (`themeCard`/`themeAccent`/`themeText`); shared SharedPreferences keys.
 - `app/src/main/java/com/lanshare/app/HttpServer.kt` (~520 lines) — The LAN HTTP server: keep-alive connection loop, request parsing, routing, upload (multipart, Unicode-safe), download, zip, text paste, `/__snapshot` change token. Per-socket `TCP_NODELAY` + 20s idle timeout, 64KB buffered output.
 - `app/src/main/java/com/lanshare/app/ServerService.kt` (~230 lines) — Foreground service that owns the server lifecycle so it survives backgrounding; acquires/releases a partial `WakeLock` + `WifiLock` (LOW_LATENCY/HIGH_PERF) around the running server.
 - `app/src/main/java/com/lanshare/app/HtmlRenderer.kt` (~655 lines) — Builds the browser file-manager HTML/CSS/JS; includes the 4s `/__snapshot` change poller.
@@ -102,7 +104,8 @@ GET (403). Restore moves an item back; emptying hard-deletes and purges password
 - **Trash + restore**: delete is undoable; the "🗑 Trash" modal restores or empties.
 - **Share links**: the "🔗 Share" button copies an expiring/one-time `/s/<token>` URL that needs no password.
 - **Copy**: text previews have a Copy button (`navigator.clipboard` with an `execCommand` fallback for plain-HTTP LAN).
-- **Camera upload**, **dark mode** (follows `prefers-color-scheme`), and a session **transfer-stats** line in the footer.
+- **Theme**: default warm palette (`#c3c2b7` bg / `#1e1e1d` text / `#d57455` accent). The web UI has a "🎨 Theme" modal with Light/Dark presets plus custom accent/bg/text pickers (hex input, derived surface/border/muted), persisted per-browser in localStorage. The native app accepts the same three hex colors in Settings (prefs → `AppTheme`).
+- **Camera upload** (in the tools row), and a session **transfer-stats** line in the footer.
 
 ### App (native) features
 - **Check for updates** button in `MainActivity` queries the GitHub `releases/latest` API off-thread, compares to the installed `versionName`, and opens the release page if newer. (Requires internet — there is no offline way to learn about newer releases.)

@@ -9,19 +9,12 @@ object HtmlRenderer {
 private val css = """
 *, *::before, *::after { box-sizing: border-box                          ; margin: 0; padding: 0; }
 :root {
---bg:                                                                    #f7f6f3; --surface: #ffffff; --border: #e4e2dc;
---text:                                                                  #1a1a18; --muted: #888680; --accent: #2a6ef5;
---accent-light:                                                          #eef2ff; --danger: #e53e3e; --success: #16a34a;
+--bg:                                                                    #c3c2b7; --surface: #cfcec4; --border: #b2b1a6;
+--text:                                                                  #1e1e1d; --muted: #6f6e66; --accent: #d57455;
+--accent-light:                                                          #e9dcd4; --danger: #c1503f; --success: #4a8a63;
 --radius: 10px                                                           ;
 --mono: ui-monospace, 'Menlo', 'Cascadia Code', monospace                ;
 --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif        ;
-}
-@media (prefers-color-scheme: dark) {
-:root {
---bg:                                                                    #16161a; --surface: #1e1e24; --border: #33333c;
---text:                                                                  #ececf0; --muted: #9a9aa6; --accent: #5b8cff;
---accent-light:                                                          #24304d; --danger: #f16060; --success: #34c759;
-}
 }
 body { background: var(--bg)                                             ; color: var(--text); font-family: var(--sans);
 font-weight: 300                                                         ; min-height: 100vh; padding: 2rem 1rem; }
@@ -145,7 +138,7 @@ margin-bottom: 0.5rem                                                    ; displ
 padding: 0.5rem 1rem                                                     ; font-family: var(--mono); font-size: 0.82rem; cursor: pointer; }
 .toast { position: fixed                                                 ; bottom: 1.5rem; left: 50%;
 transform: translateX(-50%) translateY(80px)                             ;
-background: var(--text)                                                  ; color: white; font-size: 0.82rem;
+background: var(--text)                                                  ; color: var(--bg); font-size: 0.82rem;
 font-family: var(--mono)                                                 ; padding: 0.6rem 1.2rem; border-radius: 99px;
 opacity: 0                                                               ; transition: all 0.3s; pointer-events: none; white-space: nowrap; }
 .toast.show { opacity: 1                                                 ; transform: translateX(-50%) translateY(0); }
@@ -166,6 +159,19 @@ opacity: 0                                                               ; trans
 .tile { display: flex                                                    ; flex-direction: column; gap: 0.25rem; text-decoration: none; color: var(--text); overflow: hidden; }
 .tile img { width: 100%                                                  ; height: 110px; object-fit: cover; border-radius: 8px; background: var(--bg); border: 1px solid var(--border); }
 .tile span { font-size: 0.7rem                                           ; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile .vid-ph { width: 100%                                              ; height: 110px; border-radius: 8px; background: var(--border); display: flex; align-items: center; justify-content: center; font-size: 2rem; }
+table { table-layout: fixed                                              ; }
+td:nth-child(3) { overflow: hidden                                       ; word-break: break-word; }
+td.size { width: 5.2rem                                                  ; }
+.theme-row { display: flex                                               ; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.6rem; font-size: 0.85rem; }
+.theme-row input[type=color] { width: 36px                               ; height: 28px; border: none; background: none; cursor: pointer; padding: 0; }
+.theme-hex { width: 92px                                                 ; border: 1px solid var(--border); border-radius: 6px; padding: 0.3rem 0.5rem; font-family: var(--mono); font-size: 0.78rem; background: var(--bg); color: var(--text); }
+@media (max-width: 600px) {
+body { padding: 1rem 0.5rem                                              ; }
+td { padding: 0.55rem 0.5rem                                             ; font-size: 0.82rem; }
+td.size { width: 4.4rem                                                  ; font-size: 0.7rem; }
+.tools-card .top-tools .btn { font-size: 0.72rem                         ; padding: 0.45rem 0.7rem; }
+}
 """.trimIndent()
 
 private val jsTemplate = """
@@ -178,6 +184,56 @@ const MKDIR_ENDPOINT = '__MKDIR__';
 const MOVE_ENDPOINT = '__MOVE__';
 const SHARE_ENDPOINT = '__SHARE__';
 const CURRENT_PATH = '__CURPATH__';
+
+const THEME_KEY = 'swapTheme'                                                          ;
+const THEME_PRESETS = {
+light: { bg: '#c3c2b7', surface: '#cfcec4', border: '#b2b1a6', text: '#1e1e1d', muted: '#6f6e66', accent: '#d57455', accentLight: '#e9dcd4' },
+dark: { bg: '#1e1e1d', surface: '#2a2a28', border: '#3a3a37', text: '#c3c2b7', muted: '#8f8e85', accent: '#d57455', accentLight: '#453029' }
+};
+function themeHexToRgb(h) {
+h = (h || '').replace('#', '')                                                          ;
+if (h.length === 3) h = h.split('').map(c => c + c).join('')                            ;
+if (!/^[0-9a-fA-F]{6}${'$'}/.test(h)) return null                                      ;
+const n = parseInt(h, 16)                                                               ;
+return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 }                            ;
+}
+function themeRgbToHex(r, g, b) {
+const c = x => ('0' + Math.max(0, Math.min(255, Math.round(x))).toString(16)).slice(-2) ;
+return '#' + c(r) + c(g) + c(b)                                                         ;
+}
+function themeMix(hex, amt) {
+const p = themeHexToRgb(hex); if (!p) return hex                                        ;
+const t = amt > 0 ? 255 : 0; const a = Math.abs(amt)                                    ;
+return themeRgbToHex(p.r + (t - p.r) * a, p.g + (t - p.g) * a, p.b + (t - p.b) * a)     ;
+}
+function themeFromColors(accent, bg, text) {
+const p = themeHexToRgb(bg) || { r: 195, g: 194, b: 183 }                               ;
+const dark = (0.299 * p.r + 0.587 * p.g + 0.114 * p.b) < 128                            ;
+return {
+bg, text, accent,
+surface: themeMix(bg, 0.07),
+border: themeMix(bg, dark ? 0.16 : -0.12),
+muted: themeMix(text, dark ? -0.3 : 0.35),
+accentLight: themeMix(accent, dark ? -0.55 : 0.6)
+};
+}
+function applyThemeVars(v) {
+const r = document.documentElement.style                                                ;
+r.setProperty('--bg', v.bg); r.setProperty('--surface', v.surface)                      ;
+r.setProperty('--border', v.border); r.setProperty('--text', v.text)                    ;
+r.setProperty('--muted', v.muted); r.setProperty('--accent', v.accent)                  ;
+r.setProperty('--accent-light', v.accentLight)                                          ;
+}
+function loadTheme() {
+try {
+const s = JSON.parse(localStorage.getItem(THEME_KEY) || 'null')                         ;
+if (!s) return                                                                          ;
+if (s.mode === 'dark') applyThemeVars(THEME_PRESETS.dark)                               ;
+else if (s.mode === 'light') applyThemeVars(THEME_PRESETS.light)                        ;
+else if (s.mode === 'custom') applyThemeVars(themeFromColors(s.accent, s.bg, s.text))   ;
+} catch (e) {}
+}
+loadTheme()                                                                             ;
 
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
@@ -677,6 +733,52 @@ e.preventDefault()                                                              
 openPreview(a.getAttribute('href'), name, ext)                                         ;
 })                                                                                      ;
 
+const themeModal = document.getElementById('theme-modal')                             ;
+const btnTheme = document.getElementById('btn-theme')                                 ;
+function normalizeHex(h) {
+h = (h || '').trim(); if (h && !h.startsWith('#')) h = '#' + h                        ;
+const p = themeHexToRgb(h); if (!p) return null                                        ;
+return themeRgbToHex(p.r, p.g, p.b)                                                    ;
+}
+function syncThemeInputs() {
+try {
+const s = JSON.parse(localStorage.getItem(THEME_KEY) || 'null')                        ;
+const v = (s && s.mode === 'custom') ? s : { accent: '#d57455', bg: '#c3c2b7', text: '#1e1e1d' };
+[['accent', v.accent], ['bg', v.bg], ['text', v.text]].forEach(([k, val]) => {
+document.getElementById('tc-' + k).value = val                                         ;
+document.getElementById('tx-' + k).value = val                                         ;
+})                                                                                      ;
+} catch (e) {}
+}
+btnTheme && btnTheme.addEventListener('click', () => { syncThemeInputs(); themeModal.classList.add('show'); });
+document.getElementById('theme-close').addEventListener('click', () => themeModal.classList.remove('show'));
+themeModal.addEventListener('click', (e) => { if (e.target === themeModal) themeModal.classList.remove('show'); });
+['accent', 'bg', 'text'].forEach(k => {
+const c = document.getElementById('tc-' + k), t = document.getElementById('tx-' + k)  ;
+c.addEventListener('input', () => { t.value = c.value                                  ; });
+t.addEventListener('input', () => { const n = normalizeHex(t.value); if (n) c.value = n; });
+})                                                                                      ;
+document.getElementById('theme-apply').addEventListener('click', () => {
+const accent = normalizeHex(document.getElementById('tx-accent').value) || document.getElementById('tc-accent').value;
+const bg = normalizeHex(document.getElementById('tx-bg').value) || document.getElementById('tc-bg').value;
+const text = normalizeHex(document.getElementById('tx-text').value) || document.getElementById('tc-text').value;
+localStorage.setItem(THEME_KEY, JSON.stringify({ mode: 'custom', accent, bg, text }))   ;
+applyThemeVars(themeFromColors(accent, bg, text))                                       ;
+showToast('Theme applied ✓')                                                            ;
+})                                                                                      ;
+document.getElementById('theme-light').addEventListener('click', () => {
+localStorage.setItem(THEME_KEY, JSON.stringify({ mode: 'light' }))                      ;
+applyThemeVars(THEME_PRESETS.light); showToast('Light theme ✓')                         ;
+})                                                                                      ;
+document.getElementById('theme-dark').addEventListener('click', () => {
+localStorage.setItem(THEME_KEY, JSON.stringify({ mode: 'dark' }))                       ;
+applyThemeVars(THEME_PRESETS.dark); showToast('Dark theme ✓')                           ;
+})                                                                                      ;
+document.getElementById('theme-reset').addEventListener('click', () => {
+localStorage.removeItem(THEME_KEY)                                                      ;
+applyThemeVars(THEME_PRESETS.light); syncThemeInputs(); showToast('Theme reset ✓')      ;
+})                                                                                      ;
+
 const trashModal = document.getElementById('trash-modal')                             ;
 const btnTrash = document.getElementById('btn-trash')                                 ;
 async function openTrash() {
@@ -740,7 +842,12 @@ const tile = document.createElement('a')                                        
 tile.href = href; tile.className = 'tile file-link'; tile.dataset.name = name; tile.setAttribute('download', name);
 const img = document.createElement('img')                                              ;
 img.loading = 'lazy'; img.src = '/__thumb' + href                                      ;
-img.onerror = () => { img.style.visibility = 'hidden'                                  ; };
+img.onerror = () => {
+// Some providers can't thumbnail videos — show a play tile instead of a blank.
+const ph = document.createElement('div'); ph.className = 'vid-ph'                      ;
+ph.textContent = kind === 'video' ? '▶' : '🖼'                                          ;
+img.replaceWith(ph)                                                                     ;
+}                                                                                       ;
 const label = document.createElement('span'); label.textContent = name                ;
 tile.appendChild(img); tile.appendChild(label); gallery.appendChild(tile)             ;
 }
@@ -833,11 +940,6 @@ return """
 <p class="upload-label"><strong>Click to upload</strong> or drag &amp                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ; drop</p>
 <p class="upload-label" style="margin-top:0.25rem;font-size:0.75rem;">Saves to this folder</p>
 </div>
-<div style="display:flex;gap:0.5rem;margin-bottom:1rem;">
-<label class="btn" style="cursor:pointer;">📷 Camera
-<input type="file" id="camera-input" accept="image/*,video/*" capture="environment" style="display:none;">
-</label>
-</div>
 <div id="progress-wrap">
 <div id="progress-label">Uploading…</div>
 <div id="progress-bar-bg"><div id="progress-bar"></div></div>
@@ -871,6 +973,10 @@ return """
 <button class="btn" id="btn-mkdir">📁 New folder</button>
 <button class="btn" id="btn-search-all">🌐 All folders</button>
 <button class="btn" id="btn-trash">🗑 Trash</button>
+<label class="btn" style="cursor:pointer;">📷 Camera
+<input type="file" id="camera-input" accept="image/*,video/*" capture="environment" style="display:none;">
+</label>
+<button class="btn" id="btn-theme">🎨 Theme</button>
 </div>
 </div>
 </div>
@@ -908,6 +1014,30 @@ $tableOrEmpty
 <path fill="currentColor" d="M12,0.296c-6.63,0 -12,5.373 -12,12 0,5.303 3.438,9.8 8.205,11.387 0.6,0.111 0.82,-0.261 0.82,-0.577 0,-0.285 -0.01,-1.04 -0.015,-2.04 -3.338,0.724 -4.042,-1.61 -4.042,-1.61 -0.546,-1.387 -1.333,-1.756 -1.333,-1.756 -1.089,-0.745 0.083,-0.729 0.083,-0.729 1.205,0.084 1.84,1.236 1.84,1.236 1.07,1.834 2.809,1.304 3.495,0.997 0.108,-0.776 0.418,-1.304 0.762,-1.604 -2.665,-0.304 -5.466,-1.332 -5.466,-5.93 0,-1.31 0.469,-2.381 1.235,-3.221 -0.135,-0.303 -0.54,-1.523 0.105,-3.176 0,0 1.005,-0.322 3.3,1.23 0.96,-0.267 1.98,-0.399 3,-0.405 1.02,0.006 2.04,0.138 3,0.405 2.28,-1.552 3.285,-1.23 3.285,-1.23 0.645,1.653 0.24,2.873 0.12,3.176 0.765,0.84 1.23,1.911 1.23,3.221 0,4.61 -2.805,5.625 -5.475,5.921 0.435,0.375 0.81,1.11 0.81,2.22 0,1.606 -0.015,2.896 -0.015,3.286 0,0.315 0.21,0.69 0.825,0.57C20.565,22.092 24,17.592 24,12.296 24,5.669 18.627,0.296 12,0.296z" />
 </svg>
 </a>
+</div>
+</div>
+<div class="modal-overlay" id="theme-modal">
+<div class="modal">
+<h2>🎨 Theme</h2>
+<p>Pick a preset or set custom colors (hex).</p>
+<div class="theme-row"><span>Preset</span><span style="display:flex;gap:0.5rem;">
+<button class="btn" id="theme-light">Light</button>
+<button class="btn" id="theme-dark">Dark</button>
+</span></div>
+<div class="theme-row"><span>Accent</span><span style="display:flex;gap:0.4rem;align-items:center;">
+<input type="color" id="tc-accent" value="#d57455"><input type="text" class="theme-hex" id="tx-accent" value="#d57455">
+</span></div>
+<div class="theme-row"><span>Background</span><span style="display:flex;gap:0.4rem;align-items:center;">
+<input type="color" id="tc-bg" value="#c3c2b7"><input type="text" class="theme-hex" id="tx-bg" value="#c3c2b7">
+</span></div>
+<div class="theme-row"><span>Text</span><span style="display:flex;gap:0.4rem;align-items:center;">
+<input type="color" id="tc-text" value="#1e1e1d"><input type="text" class="theme-hex" id="tx-text" value="#1e1e1d">
+</span></div>
+<div class="modal-btns">
+<button class="btn-cancel" id="theme-reset">Reset</button>
+<button class="btn-cancel" id="theme-close">Close</button>
+<button class="btn" id="theme-apply">Apply</button>
+</div>
 </div>
 </div>
 <div class="modal-overlay" id="trash-modal">

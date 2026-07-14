@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg_main">#F7F6F3</color>
-    <color name="surface">#FFFFFF</color>
-    <color name="border">#E4E2DC</color>
-    <color name="text_primary">#1A1A18</color>
-    <color name="text_muted">#888680</color>
-    <color name="accent">#2A6EF5</color>
-    <color name="accent_light">#EEF2FF</color>
-    <color name="action_restart">#F59E0B</color>
-    <color name="action_stop">#E53E3E</color>
-    <color name="action_folder">#0EA5A4</color>
-    <color name="status_running">#16A34A</color>
-    <color name="status_stopped">#E53E3E</color>
+    <color name="bg_main">#C3C2B7</color>
+    <color name="surface">#CFCEC4</color>
+    <color name="border">#B2B1A6</color>
+    <color name="text_primary">#1E1E1D</color>
+    <color name="text_muted">#6F6E66</color>
+    <color name="accent">#D57455</color>
+    <color name="accent_light">#E9DCD4</color>
+    <color name="action_restart">#B05F43</color>
+    <color name="action_stop">#C1503F</color>
+    <color name="action_folder">#55544D</color>
+    <color name="status_running">#4A8A63</color>
+    <color name="status_stopped">#C1503F</color>
     <color name="white">#FFFFFF</color>
 </resources>

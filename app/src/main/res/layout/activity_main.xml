@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/rootScroll"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fillViewport="true"
@@ -16,12 +17,14 @@
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:background="@drawable/bg_card"
+            android:tag="themeCard"
             android:padding="16dp">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Swap"
+                android:tag="themeText"
                 android:textColor="@color/text_primary"
                 android:textSize="24sp"
                 android:fontFamily="@font/jetbrains_mono_bold" />
@@ -32,6 +35,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
                 android:text="http://0.0.0.0:1390"
+                android:tag="themeText"
                 android:textColor="@color/text_primary"
                 android:textSize="24sp"
                 android:fontFamily="@font/jetbrains_mono_bold" />
@@ -76,109 +80,27 @@
                 android:textSize="14sp"
                 android:fontFamily="@font/jetbrains_mono_bold" />
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:fontFamily="@font/jetbrains_mono_regular"
-                android:text="@string/auth_hint"
-                android:textColor="@color/text_muted"
-                android:textSize="12sp" />
-
-            <EditText
-                android:id="@+id/etAuthUser"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:background="@drawable/bg_edittext"
-                android:fontFamily="@font/jetbrains_mono_regular"
-                android:hint="@string/auth_user_hint"
-                android:inputType="text"
-                android:autofillHints="username"
-                android:maxLines="1"
-                android:textColor="@color/text_primary"
-                android:textColorHint="@color/text_muted" />
-
-            <EditText
-                android:id="@+id/etAuthPass"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:background="@drawable/bg_edittext"
-                android:fontFamily="@font/jetbrains_mono_regular"
-                android:hint="@string/auth_pass_hint"
-                android:inputType="textPassword"
-                android:autofillHints="password"
-                android:maxLines="1"
-                android:textColor="@color/text_primary"
-                android:textColorHint="@color/text_muted" />
-
-            <LinearLayout
+            <Button
+                android:id="@+id/btnStartServer"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="14dp"
-                android:orientation="horizontal">
-
-                <EditText
-                    android:id="@+id/etPort"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:background="@drawable/bg_edittext"
-                    android:fontFamily="@font/jetbrains_mono_regular"
-                    android:hint="Port"
-                    android:inputType="number"
-                    android:maxLines="1"
-                    android:text="1390"
-                    android:textColor="@color/text_primary"
-                    android:textColorHint="@color/text_muted" />
-
-                <Button
-                    android:id="@+id/btnStartServer"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:background="@drawable/bg_warning_button"
-                    android:fontFamily="@font/jetbrains_mono_bold"
-                    android:minHeight="46dp"
-                    android:paddingLeft="16dp"
-                    android:paddingTop="10dp"
-                    android:paddingRight="16dp"
-                    android:paddingBottom="10dp"
-                    android:text="Start / Restart"
-                    android:textAllCaps="false"
-                    android:textColor="@color/white" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:orientation="horizontal">
-
-                <Button
-                    android:id="@+id/btnStopServer"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:background="@drawable/bg_danger_button"
-                    android:fontFamily="@font/jetbrains_mono_bold"
-                    android:minHeight="46dp"
-                    android:paddingTop="10dp"
-                    android:paddingBottom="10dp"
-                    android:text="Stop"
-                    android:textAllCaps="false"
-                    android:textColor="@color/white" />
-            </LinearLayout>
+                android:background="@drawable/bg_warning_button"
+                android:fontFamily="@font/jetbrains_mono_bold"
+                android:minHeight="46dp"
+                android:text="Start / Restart"
+                android:textAllCaps="false"
+                android:textColor="@color/white" />
 
             <Button
-                android:id="@+id/btnEnableHotspot"
+                android:id="@+id/btnStopServer"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:background="@drawable/bg_teal_button"
+                android:background="@drawable/bg_danger_button"
                 android:fontFamily="@font/jetbrains_mono_bold"
                 android:minHeight="46dp"
-                android:text="Hotspot settings"
+                android:text="Stop"
                 android:textAllCaps="false"
                 android:textColor="@color/white" />
 
@@ -188,54 +110,25 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
                 android:background="@drawable/bg_primary_button"
+                android:tag="themeAccent"
                 android:fontFamily="@font/jetbrains_mono_bold"
+                android:minHeight="46dp"
                 android:text="Open in Browser"
                 android:textAllCaps="false"
                 android:textColor="@color/white" />
 
             <Button
-                android:id="@+id/btnChangeFolder"
+                android:id="@+id/btnSettings"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:background="@drawable/bg_teal_button"
+                android:tag="themeAccent"
                 android:fontFamily="@font/jetbrains_mono_bold"
                 android:minHeight="46dp"
-                android:text="📁 Change folder"
+                android:text="⚙️ Settings"
                 android:textAllCaps="false"
                 android:textColor="@color/white" />
-
-            <TextView
-                android:id="@+id/tvFolder"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:textColor="@color/text_muted"
-                android:textSize="12sp"
-                android:fontFamily="@font/jetbrains_mono_regular" />
-
-            <Button
-                android:id="@+id/btnCheckUpdate"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:background="@drawable/bg_teal_button"
-                android:fontFamily="@font/jetbrains_mono_bold"
-                android:minHeight="46dp"
-                android:text="⬇️ Check for updates"
-                android:textAllCaps="false"
-                android:textColor="@color/white" />
-
-            <ImageButton
-                android:id="@+id/btnGithub"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
-                android:layout_marginTop="10dp"
-                android:layout_gravity="center_horizontal"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
-                android:padding="6dp"
-                android:contentDescription="GitHub"
-                android:src="@drawable/ic_github" />
         </LinearLayout>
 
     </LinearLayout>
