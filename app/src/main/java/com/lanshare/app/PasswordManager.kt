@@ -45,6 +45,22 @@ class PasswordManager(private val storage: StorageAccess) {
         hash.equals(sha256Hex(salt + password), ignoreCase = true)
     }
 
+    suspend fun removeEntry(relativePath: String) = mutex.withLock {
+        val db = loadDb()
+        db.remove(normalize(relativePath))
+        saveDb(db)
+    }
+
+    suspend fun renameEntry(oldPath: String, newPath: String) = mutex.withLock {
+        val db = loadDb()
+        val from = normalize(oldPath)
+        val to = normalize(newPath)
+        val entry = db.optJSONObject(from) ?: return@withLock
+        db.remove(from)
+        db.put(to, entry)
+        saveDb(db)
+    }
+
     private fun loadDb(): JSONObject {
         val text = storage.readPasswordsJson()
         return try {

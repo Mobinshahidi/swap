@@ -76,4 +76,5 @@ android {
 dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("com.google.zxing:core:3.5.3")
+    implementation("org.jmdns:jmdns:3.5.9")
 }

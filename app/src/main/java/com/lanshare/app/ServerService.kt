@@ -27,6 +27,7 @@ import java.util.Locale
 data class ServerUiState(
     val running: Boolean = false,
     val url: String = "",
+    val mdnsUrl: String = "",
     val status: String = "stopped",
     val port: Int = 1390,
     val folderDisplay: String = ""
@@ -38,6 +39,8 @@ class ServerService : Service() {
     private var serverJob: Job? = null
     private var wifiLock: WifiManager.WifiLock? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    private var jmdns: javax.jmdns.JmDNS? = null
+    private var multicastLock: WifiManager.MulticastLock? = null
 
     companion object {
         const val ACTION_START = "com.lanshare.app.START"
@@ -47,6 +50,7 @@ class ServerService : Service() {
         const val EXTRA_TREE_URI = "extra_tree_uri"
         const val EXTRA_AUTH_USER = "extra_auth_user"
         const val EXTRA_AUTH_PASS = "extra_auth_pass"
+        const val MDNS_HOST = "swap"
 
         private val _state = MutableStateFlow(ServerUiState())
         val state: StateFlow<ServerUiState> = _state.asStateFlow()
@@ -100,14 +104,19 @@ class ServerService : Service() {
                     acquireLocks()
                     val ip = resolveBestIpAddress() ?: "127.0.0.1"
                     val url = "http://$ip:$port"
+                    val mdnsUrl = if (ip != "127.0.0.1") "http://$MDNS_HOST.local:$port" else ""
                     _state.value = ServerUiState(
                         running = true,
                         status = "running",
                         url = url,
+                        mdnsUrl = mdnsUrl,
                         port = port,
                         folderDisplay = storage.displayPath()
                     )
                     getSystemService(NotificationManager::class.java)?.notify(1001, notification())
+                    // mDNS registration does blocking network I/O; keep it off the
+                    // start path so the URL/QR appear immediately.
+                    if (ip != "127.0.0.1") serviceScope.launch { startMdns(ip, port) }
                 }
                 .onFailure {
                     _state.value = ServerUiState(
@@ -130,8 +139,37 @@ class ServerService : Service() {
     private fun stopServerOnly() {
         runCatching { server?.stop() }
         server = null
+        stopMdns()
         releaseLocks()
-        _state.value = _state.value.copy(running = false, status = "stopped", url = "")
+        _state.value = _state.value.copy(running = false, status = "stopped", url = "", mdnsUrl = "")
+    }
+
+    // Publishes an mDNS record so the server is reachable at http://swap.local:<port>
+    // without typing an IP. Best-effort: failures (e.g. some SoftAP setups) never
+    // affect the IP-based server. JmDNS.create(addr, "swap") makes "swap.local"
+    // resolve to this device.
+    private fun startMdns(ip: String, port: Int) {
+        runCatching {
+            stopMdns()
+            val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            multicastLock = wm?.createMulticastLock("swap:mdns")?.apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+            val addr = java.net.InetAddress.getByName(ip)
+            val jm = javax.jmdns.JmDNS.create(addr, MDNS_HOST)
+            val info = javax.jmdns.ServiceInfo.create("_http._tcp.local.", "Swap", port, "Swap file share")
+            jm.registerService(info)
+            jmdns = jm
+        }
+    }
+
+    private fun stopMdns() {
+        runCatching { jmdns?.unregisterAllServices() }
+        runCatching { jmdns?.close() }
+        jmdns = null
+        runCatching { if (multicastLock?.isHeld == true) multicastLock?.release() }
+        multicastLock = null
     }
 
     // Keep the Wi-Fi radio out of power-save and the CPU awake while the server

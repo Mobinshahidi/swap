@@ -38,6 +38,19 @@ If you publish GitHub Releases, you can also attach `swap-release.apk` there for
 
 ---
 
+## Screenshots
+
+Screenshots live in `fastlane/metadata/android/en-US/images/phoneScreenshots/`
+(picked up automatically by the F-Droid build). Add real device captures there
+as `1.png`, `2.png`, … and they can be embedded below:
+
+<!--
+![Main screen](fastlane/metadata/android/en-US/images/phoneScreenshots/1.png)
+![Web file manager](fastlane/metadata/android/en-US/images/phoneScreenshots/2.png)
+-->
+
+---
+
 ## App UI Overview
 
 - URL display and status (`running` / `stopped`)
@@ -63,7 +76,16 @@ If you publish GitHub Releases, you can also attach `swap-release.apk` there for
 - Multi-select toolbar:
   - Download as ZIP
   - Queue download
+  - Rename / Move / Delete (delete goes to Trash)
+  - Share link (expiring / one-time, works without the password)
+- New folder, recursive "all folders" search, and a Trash view (restore / empty)
+- In-browser preview (image / video / audio / PDF / text) with seeking via HTTP Range
+- Gallery / thumbnail grid for photo folders
+- Copy text-file contents to clipboard
+- Camera capture upload
+- Dark mode (follows system theme)
 - Auto-refresh when folder content changes
+- Reachable at `http://swap.local:<port>` via mDNS (no IP needed)
 
 ---
 

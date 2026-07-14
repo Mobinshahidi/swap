@@ -214,6 +214,18 @@
                 android:textSize="12sp"
                 android:fontFamily="@font/jetbrains_mono_regular" />
 
+            <Button
+                android:id="@+id/btnCheckUpdate"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/bg_teal_button"
+                android:fontFamily="@font/jetbrains_mono_bold"
+                android:minHeight="46dp"
+                android:text="⬇️ Check for updates"
+                android:textAllCaps="false"
+                android:textColor="@color/white" />
+
             <ImageButton
                 android:id="@+id/btnGithub"
                 android:layout_width="32dp"

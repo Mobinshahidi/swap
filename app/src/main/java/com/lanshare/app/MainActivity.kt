@@ -1,6 +1,7 @@
 package com.lanshare.app
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.content.SharedPreferences
 import android.net.Uri
@@ -22,6 +23,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 
 class MainActivity : Activity() {
 	private lateinit var prefs: SharedPreferences
@@ -138,6 +143,71 @@ class MainActivity : Activity() {
 			val url = "https://github.com/Mobinshahidi/swap"
 			startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
 		}
+
+		val btnCheckUpdate: Button = findViewById(R.id.btnCheckUpdate)
+		btnCheckUpdate.setOnClickListener { checkForUpdates() }
+	}
+
+	// Checking for a newer release inherently needs one network request to GitHub;
+	// there is no offline way to know about releases published after this build.
+	private fun checkForUpdates() {
+		toast("Checking for updates…")
+		uiScope.launch {
+			val result = withContext(Dispatchers.IO) { fetchLatestRelease() }
+			if (result == null) {
+				toast("Update check failed (no internet?)")
+				return@launch
+			}
+			val (tag, htmlUrl) = result
+			val current = currentVersionName()
+			if (isNewer(tag, current)) showUpdateDialog(tag, htmlUrl)
+			else toast("You're up to date (v$current)")
+		}
+	}
+
+	private fun fetchLatestRelease(): Pair<String, String>? {
+		return runCatching {
+			val conn = (URL("https://api.github.com/repos/Mobinshahidi/swap/releases/latest").openConnection() as HttpURLConnection).apply {
+				requestMethod = "GET"
+				setRequestProperty("Accept", "application/vnd.github+json")
+				setRequestProperty("User-Agent", "Swap-App")
+				connectTimeout = 8000
+				readTimeout = 8000
+			}
+			conn.inputStream.use { stream ->
+				val obj = JSONObject(stream.readBytes().toString(Charsets.UTF_8))
+				val tag = obj.optString("tag_name")
+				val html = obj.optString("html_url")
+				if (tag.isBlank()) null else Pair(tag, html)
+			}
+		}.getOrNull()
+	}
+
+	private fun currentVersionName(): String {
+		return runCatching { packageManager.getPackageInfo(packageName, 0).versionName ?: "" }.getOrDefault("")
+	}
+
+	private fun isNewer(remote: String, local: String): Boolean {
+		val r = remote.trimStart('v', 'V').split('.').mapNotNull { it.toIntOrNull() }
+		val l = local.trimStart('v', 'V').split('.').mapNotNull { it.toIntOrNull() }
+		for (i in 0 until maxOf(r.size, l.size)) {
+			val rv = r.getOrElse(i) { 0 }
+			val lv = l.getOrElse(i) { 0 }
+			if (rv != lv) return rv > lv
+		}
+		return false
+	}
+
+	private fun showUpdateDialog(tag: String, htmlUrl: String) {
+		AlertDialog.Builder(this)
+			.setTitle("Update available")
+			.setMessage("Version $tag is available. Open the release page to download?")
+			.setPositiveButton("Open") { _, _ ->
+				val url = htmlUrl.ifBlank { "https://github.com/Mobinshahidi/swap/releases/latest" }
+				startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+			}
+			.setNegativeButton("Later", null)
+			.show()
 	}
 
 	override fun onResume() {
@@ -187,7 +257,8 @@ class MainActivity : Activity() {
 					)
 				)
 				currentUrl = state.url
-				tvUrl.text = if (state.url.isBlank()) getString(R.string.server_not_running) else state.url
+				val display = if (state.mdnsUrl.isNotBlank()) "${state.url}\n${state.mdnsUrl}" else state.url
+				tvUrl.text = if (state.url.isBlank()) getString(R.string.server_not_running) else display
 				if (state.folderDisplay.isNotBlank()) tvFolder.text = formatSafDisplayPath(state.folderDisplay)
 				tvQrMode.text = if (state.url.isBlank()) getString(R.string.qr_mode_none) else getString(R.string.qr_mode_server)
 				renderQr(if (state.url.isBlank()) "" else state.url)

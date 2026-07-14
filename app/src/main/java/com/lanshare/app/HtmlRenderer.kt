@@ -16,6 +16,13 @@ private val css = """
 --mono: ui-monospace, 'Menlo', 'Cascadia Code', monospace                ;
 --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif        ;
 }
+@media (prefers-color-scheme: dark) {
+:root {
+--bg:                                                                    #16161a; --surface: #1e1e24; --border: #33333c;
+--text:                                                                  #ececf0; --muted: #9a9aa6; --accent: #5b8cff;
+--accent-light:                                                          #24304d; --danger: #f16060; --success: #34c759;
+}
+}
 body { background: var(--bg)                                             ; color: var(--text); font-family: var(--sans);
 font-weight: 300                                                         ; min-height: 100vh; padding: 2rem 1rem; }
 .container { max-width: 680px                                            ; margin: 0 auto; }
@@ -73,6 +80,7 @@ cursor: pointer                                                          ; white
 .btn:hover { opacity: 0.85                                               ; }
 .btn:disabled { opacity: 0.45                                            ; cursor: not-allowed; }
 .btn-success { background: var(--success)                                ; }
+.btn-danger { background: var(--danger)                                  ; }
 .hint { font-size: 0.72rem                                               ; color: var(--muted); margin-top: 0.5rem; font-family: var(--mono); }
 .files-card { background: var(--surface)                                 ; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
 .files-header { padding: 0.75rem 1.25rem                                 ; font-size: 0.75rem; font-family: var(--mono); color: var(--muted);
@@ -145,12 +153,30 @@ opacity: 0                                                               ; trans
 .github-link { display: inline-flex                                      ; color: var(--muted); }
 .github-link:hover { color: var(--text)                                  ; }
 .github-link svg { width: 18px                                           ; height: 18px; }
+.preview-box { background: var(--surface)                                ; border-radius: var(--radius); width: 92%; max-width: 900px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
+.preview-head { display: flex                                            ; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); }
+.preview-title { font-family: var(--mono)                                ; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preview-actions { display: flex                                         ; gap: 0.5rem; align-items: center; flex-shrink: 0; }
+.preview-body { padding: 1rem                                            ; overflow: auto; background: var(--bg); }
+.preview-media { max-width: 100%                                         ; max-height: 78vh; display: block; margin: 0 auto; }
+.preview-frame { width: 100%                                             ; height: 78vh; border: none; background: #fff; }
+.preview-text { font-family: var(--mono)                                 ; font-size: 0.8rem; white-space: pre-wrap; word-break: break-word; color: var(--text); }
+.gallery { display: none                                                 ; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 0.5rem; padding: 1rem; }
+.gallery.on { display: grid                                              ; }
+.tile { display: flex                                                    ; flex-direction: column; gap: 0.25rem; text-decoration: none; color: var(--text); overflow: hidden; }
+.tile img { width: 100%                                                  ; height: 110px; object-fit: cover; border-radius: 8px; background: var(--bg); border: 1px solid var(--border); }
+.tile span { font-size: 0.7rem                                           ; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 """.trimIndent()
 
 private val jsTemplate = """
 const UPLOAD_ENDPOINT = '__UPLOAD__';
 const PASTE_ENDPOINT = '__PASTE__';
 const ZIP_ENDPOINT = '__ZIP__';
+const DELETE_ENDPOINT = '__DELETE__';
+const RENAME_ENDPOINT = '__RENAME__';
+const MKDIR_ENDPOINT = '__MKDIR__';
+const MOVE_ENDPOINT = '__MOVE__';
+const SHARE_ENDPOINT = '__SHARE__';
 const CURRENT_PATH = '__CURPATH__';
 
 const dropZone = document.getElementById('drop-zone');
@@ -249,6 +275,8 @@ setTimeout(() => location.reload(), 800)                                        
 }
 
 fileInput.addEventListener('change', () => uploadFiles([...fileInput.files]))         ;
+const cameraInput = document.getElementById('camera-input')                           ;
+cameraInput && cameraInput.addEventListener('change', () => uploadFiles([...cameraInput.files]));
 dropZone.addEventListener('dragover', (e) => { e.preventDefault()                     ; dropZone.classList.add('drag-over'); });
 dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
 dropZone.addEventListener('drop', (e) => {
@@ -331,6 +359,11 @@ const toolbar = document.getElementById('select-toolbar');
 const selCount = document.getElementById('sel-count');
 const btnZip = document.getElementById('btn-zip');
 const btnQueue = document.getElementById('btn-queue');
+const btnRename = document.getElementById('btn-rename');
+const btnMove = document.getElementById('btn-move');
+const btnDelete = document.getElementById('btn-delete');
+const btnMkdir = document.getElementById('btn-mkdir');
+const btnShare = document.getElementById('btn-share');
 
 function getCheckboxes() { return [...document.querySelectorAll('.file-cb')]; }
 
@@ -352,6 +385,10 @@ const label = n === 1 ? '1 item selected' : `${'$'}{n} items selected`       ;
 selCount.textContent = label + (hasDir ? ' (folders \u2192 ZIP only)' : '');
 btnZip.disabled = false                                                      ;
 btnQueue.disabled = items.every(i => i.isDir)                                ;
+if (btnDelete) btnDelete.disabled = false                                    ;
+if (btnMove) btnMove.disabled = false                                        ;
+if (btnRename) btnRename.disabled = n !== 1                                  ;
+if (btnShare) btnShare.disabled = !(n === 1 && !items[0].isDir)              ;
 } else {
 toolbar.classList.remove('visible');
 }
@@ -391,7 +428,116 @@ document.body.removeChild(form)                           ;
 showToast(`Zipping ${'$'}{names.length} item(s)\u2026`);
 })                                                        ;
 
+btnMkdir && btnMkdir.addEventListener('click', async () => {
+const raw = prompt('New folder name:')                                    ;
+if (raw === null) return                                                   ;
+const name = raw.trim()                                                    ;
+if (!name) return                                                          ;
+try {
+const res = await fetch(MKDIR_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+if (res.ok) { showToast('Folder created ✓'); setTimeout(() => location.reload(), 500); }
+else { showToast('Create failed')                                          ; }
+} catch (e) { showToast('Create failed')                                    ; }
+})                                                                          ;
+
+btnRename && btnRename.addEventListener('click', async () => {
+const items = getCheckedItems()                                            ;
+if (items.length !== 1) return                                             ;
+const oldName = items[0].name                                              ;
+const raw = prompt('Rename to:', oldName)                                  ;
+if (raw === null) return                                                    ;
+const to = raw.trim()                                                       ;
+if (!to || to === oldName) return                                          ;
+try {
+const res = await fetch(RENAME_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: oldName, to }) });
+if (res.ok) { showToast('Renamed ✓'); setTimeout(() => location.reload(), 500); }
+else { showToast('Rename failed')                                          ; }
+} catch (e) { showToast('Rename failed')                                    ; }
+})                                                                          ;
+
+btnDelete && btnDelete.addEventListener('click', async () => {
+const names = getCheckedNames()                                            ;
+if (!names.length) return                                                   ;
+if (!confirm(`Delete ${'$'}{names.length} item(s)? This cannot be undone.`)) return;
+const body = names.map(n => 'files=' + encodeURIComponent(n)).join('&')     ;
+try {
+const res = await fetch(DELETE_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+if (res.ok) { showToast('Deleted ✓'); setTimeout(() => location.reload(), 500); }
+else { showToast('Delete failed')                                          ; }
+} catch (e) { showToast('Delete failed')                                    ; }
+})                                                                          ;
+
+btnMove && btnMove.addEventListener('click', async () => {
+const names = getCheckedNames()                                            ;
+if (!names.length) return                                                   ;
+const raw = prompt('Move to folder (path from root, blank = root):', '')   ;
+if (raw === null) return                                                    ;
+const dest = raw.trim()                                                     ;
+try {
+const res = await fetch(MOVE_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dest, files: names }) });
+if (res.ok) { const j = await res.json(); showToast('Moved ' + (j.moved || 0) + ' item(s) ✓'); setTimeout(() => location.reload(), 500); }
+else { showToast('Move failed')                                            ; }
+} catch (e) { showToast('Move failed')                                      ; }
+})                                                                          ;
+
+btnShare && btnShare.addEventListener('click', async () => {
+const items = getCheckedItems()                                                        ;
+if (items.length !== 1 || items[0].isDir) return                                       ;
+const raw = prompt('Link valid for how many hours? (1-168)', '24')                     ;
+if (raw === null) return                                                                ;
+const hours = Math.max(1, Math.min(168, parseInt(raw, 10) || 24))                      ;
+const once = confirm('One-time link? OK = single download, Cancel = reusable until it expires.');
+try {
+const res = await fetch(SHARE_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: items[0].name, ttl: hours * 3600, once }) });
+if (!res.ok) { showToast('Share failed')                                               ; return; }
+const j = await res.json()                                                             ;
+const url = location.origin + j.path                                                   ;
+copyText(url)                                                                           ;
+showToast('Share link copied ✓')                                                       ;
+} catch (e) { showToast('Share failed')                                                 ; }
+})                                                                                      ;
+
 const queuePanel = document.getElementById('queue-panel');
+
+const btnSearchAll = document.getElementById('btn-search-all')                         ;
+btnSearchAll && btnSearchAll.addEventListener('click', async () => {
+const q = (searchInput.value || '').trim()                                            ;
+if (!q) { showToast('Type something to search')                                       ; return; }
+try {
+const r = await fetch('/__search?q=' + encodeURIComponent(q))                         ;
+if (!r.ok) { showToast('Search failed')                                               ; return; }
+renderSearchResults(await r.json(), q)                                                 ;
+} catch (e) { showToast('Search failed')                                               ; }
+})                                                                                      ;
+
+function formatBytes(n) {
+if (!n || n <= 0) return '0 B'                                                         ;
+const u = ['B','KB','MB','GB','TB']; let v = n, i = 0                                  ;
+while (v >= 1024 && i < u.length - 1) { v /= 1024; i++                                 ; }
+return (Math.round(v * 10) / 10) + ' ' + u[i]                                          ;
+}
+
+function renderSearchResults(items, q) {
+const tbody = document.getElementById('files-tbody')                                  ;
+if (!tbody) return                                                                     ;
+tbody.innerHTML = ''                                                                   ;
+if (!items.length) {
+const tr = document.createElement('tr')                                               ;
+tr.innerHTML = '<td colspan="4" class="empty">No matches for &quot;' + escHtml(q) + '&quot;</td>';
+tbody.appendChild(tr); return                                                          ;
+}
+for (const it of items) {
+const tr = document.createElement('tr')                                               ;
+const url = '/' + it.path.split('/').map(encodeURIComponent).join('/')                ;
+const icon = it.isDir ? '📁' : '📄'                                                    ;
+const link = it.isDir
+? '<a href="' + url + '">' + escHtml(it.name) + '/</a>'
+: '<a href="' + url + '" class="file-link" data-name="' + escHtml(it.name) + '" download="' + escHtml(it.name) + '">' + escHtml(it.name) + '</a>';
+const sub = '<div style="font-size:0.7rem;color:var(--muted);">' + escHtml(it.path) + '</div>';
+tr.innerHTML = '<td class="check"></td><td class="icon">' + icon + '</td><td>' + link + sub + '</td><td class="size">' + (it.isDir ? '—' : formatBytes(it.size)) + '</td>';
+tbody.appendChild(tr)                                                                  ;
+}
+}
 
 btnQueue && btnQueue.addEventListener('click', () => {
 const items = getCheckedItems().filter(i => !i.isDir)                                   ;
@@ -466,6 +612,157 @@ xhr.send()                                                                      
 })                                                                                     ;
 }
 
+const PREVIEW_IMG = ['jpg','jpeg','png','gif','webp','bmp','svg','avif']              ;
+const PREVIEW_VIDEO = ['mp4','webm','mov','m4v','ogv']                               ;
+const PREVIEW_AUDIO = ['mp3','wav','ogg','oga','m4a','flac','aac']                   ;
+const PREVIEW_TEXT = ['txt','md','log','json','xml','csv','js','ts','css','html','htm','py','java','kt','c','cpp','h','sh','yml','yaml','ini','conf'];
+function previewKind(ext) {
+if (PREVIEW_IMG.includes(ext)) return 'img'                                          ;
+if (PREVIEW_VIDEO.includes(ext)) return 'video'                                      ;
+if (PREVIEW_AUDIO.includes(ext)) return 'audio'                                      ;
+if (PREVIEW_TEXT.includes(ext)) return 'text'                                        ;
+if (ext === 'pdf') return 'pdf'                                                       ;
+return null                                                                           ;
+}
+const previewModal = document.getElementById('preview-modal')                         ;
+async function openPreview(url, name, ext) {
+const inlineUrl = url + (url.includes('?') ? '&' : '?') + 'inline=1'                  ;
+const bodyEl = document.getElementById('preview-body')                                ;
+document.getElementById('preview-title').textContent = name                           ;
+const dl = document.getElementById('preview-download')                                ;
+dl.href = url; dl.setAttribute('download', name)                                       ;
+bodyEl.innerHTML = ''                                                                  ;
+document.getElementById('preview-copy').style.display = 'none'                         ;
+const kind = previewKind(ext)                                                          ;
+if (kind === 'img') {
+const img = document.createElement('img'); img.src = inlineUrl; img.className = 'preview-media'; bodyEl.appendChild(img);
+} else if (kind === 'video') {
+const v = document.createElement('video'); v.src = inlineUrl; v.controls = true; v.className = 'preview-media'; bodyEl.appendChild(v);
+} else if (kind === 'audio') {
+const a = document.createElement('audio'); a.src = inlineUrl; a.controls = true; a.style.width = '100%'; bodyEl.appendChild(a);
+} else if (kind === 'pdf') {
+const f = document.createElement('iframe'); f.src = inlineUrl; f.className = 'preview-frame'; bodyEl.appendChild(f);
+} else {
+const pre = document.createElement('pre'); pre.className = 'preview-text'; pre.textContent = 'Loading…'; bodyEl.appendChild(pre);
+try { const r = await fetch(inlineUrl); const t = await r.text(); pre.textContent = t; const cb = document.getElementById('preview-copy'); cb.style.display = ''; cb.onclick = () => copyText(t); } catch (e) { pre.textContent = 'Failed to load'; }
+}
+previewModal.classList.add('show')                                                    ;
+}
+function copyText(t) {
+if (navigator.clipboard && navigator.clipboard.writeText) {
+navigator.clipboard.writeText(t).then(() => showToast('Copied ✓')).catch(() => fallbackCopy(t));
+} else { fallbackCopy(t)                                                               ; }
+}
+function fallbackCopy(t) {
+const ta = document.createElement('textarea'); ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0';
+document.body.appendChild(ta); ta.select()                                             ;
+try { document.execCommand('copy'); showToast('Copied ✓'); } catch (e) { showToast('Copy failed'); }
+document.body.removeChild(ta)                                                           ;
+}
+function closePreview() {
+previewModal.classList.remove('show')                                                 ;
+document.getElementById('preview-body').innerHTML = ''                                 ;
+}
+document.getElementById('preview-close').addEventListener('click', closePreview)       ;
+previewModal.addEventListener('click', (e) => { if (e.target === previewModal) closePreview(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && previewModal.classList.contains('show')) closePreview(); });
+document.addEventListener('click', (e) => {
+const a = e.target.closest ? e.target.closest('a.file-link') : null                   ;
+if (!a) return                                                                         ;
+const name = a.dataset.name || ''                                                      ;
+const dot = name.lastIndexOf('.')                                                      ;
+const ext = dot >= 0 ? name.slice(dot + 1).toLowerCase() : ''                          ;
+if (!previewKind(ext)) return                                                          ;
+e.preventDefault()                                                                     ;
+openPreview(a.getAttribute('href'), name, ext)                                         ;
+})                                                                                      ;
+
+const trashModal = document.getElementById('trash-modal')                             ;
+const btnTrash = document.getElementById('btn-trash')                                 ;
+async function openTrash() {
+const body = document.getElementById('trash-body')                                    ;
+body.innerHTML = 'Loading…'                                                            ;
+try {
+const r = await fetch('/__trash')                                                     ;
+if (!r.ok) { body.textContent = 'Failed to load'; return                              ; }
+const items = await r.json()                                                          ;
+if (!items.length) { body.innerHTML = '<div class="empty">Trash is empty</div>'       ; }
+else {
+body.innerHTML = ''                                                                   ;
+const tbl = document.createElement('table'); const tb = document.createElement('tbody');
+for (const it of items) {
+const tr = document.createElement('tr')                                               ;
+tr.innerHTML = '<td class="check"><input type="checkbox" class="trash-cb" data-name="' + escHtml(it.name) + '"></td><td class="icon">' + (it.isDir ? '📁' : '📄') + '</td><td>' + escHtml(it.name) + '<div style="font-size:0.7rem;color:var(--muted);">from ' + escHtml(it.original) + '</div></td><td class="size">' + (it.isDir ? '—' : formatBytes(it.size)) + '</td>';
+tb.appendChild(tr)                                                                     ;
+}
+tbl.appendChild(tb); body.appendChild(tbl)                                            ;
+}
+} catch (e) { body.textContent = 'Failed to load'                                     ; }
+trashModal.classList.add('show')                                                      ;
+}
+btnTrash && btnTrash.addEventListener('click', openTrash)                              ;
+document.getElementById('trash-close').addEventListener('click', () => trashModal.classList.remove('show'));
+trashModal.addEventListener('click', (e) => { if (e.target === trashModal) trashModal.classList.remove('show'); });
+document.getElementById('trash-restore').addEventListener('click', async () => {
+const names = [...document.querySelectorAll('.trash-cb')].filter(c => c.checked).map(c => c.dataset.name);
+if (!names.length) { showToast('Select items to restore'); return                     ; }
+const body = names.map(n => 'files=' + encodeURIComponent(n)).join('&')               ;
+try {
+const res = await fetch('/__restore', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+if (res.ok) { showToast('Restored ✓'); setTimeout(() => location.reload(), 500); } else showToast('Restore failed');
+} catch (e) { showToast('Restore failed')                                             ; }
+})                                                                                      ;
+document.getElementById('trash-empty').addEventListener('click', async () => {
+if (!confirm('Permanently delete everything in Trash?')) return                        ;
+try {
+const res = await fetch('/__trashempty', { method: 'POST' })                          ;
+if (res.ok) { showToast('Trash emptied ✓'); openTrash(); } else showToast('Failed')   ;
+} catch (e) { showToast('Failed')                                                     ; }
+})                                                                                      ;
+
+const btnGallery = document.getElementById('btn-gallery')                             ;
+let galleryOn = false                                                                  ;
+function buildGallery() {
+const gallery = document.getElementById('gallery')                                    ;
+if (!gallery) return                                                                   ;
+gallery.innerHTML = ''                                                                 ;
+const links = [...document.querySelectorAll('#files-tbody a.file-link')]              ;
+let count = 0                                                                          ;
+for (const a of links) {
+const name = a.dataset.name || ''                                                      ;
+const dot = name.lastIndexOf('.')                                                      ;
+const ext = dot >= 0 ? name.slice(dot + 1).toLowerCase() : ''                          ;
+const kind = previewKind(ext)                                                          ;
+if (kind !== 'img' && kind !== 'video') continue                                       ;
+count++                                                                                ;
+const href = a.getAttribute('href')                                                    ;
+const tile = document.createElement('a')                                               ;
+tile.href = href; tile.className = 'tile file-link'; tile.dataset.name = name; tile.setAttribute('download', name);
+const img = document.createElement('img')                                              ;
+img.loading = 'lazy'; img.src = '/__thumb' + href                                      ;
+img.onerror = () => { img.style.visibility = 'hidden'                                  ; };
+const label = document.createElement('span'); label.textContent = name                ;
+tile.appendChild(img); tile.appendChild(label); gallery.appendChild(tile)             ;
+}
+if (!count) gallery.innerHTML = '<div class="empty">No images or videos here</div>'    ;
+}
+btnGallery && btnGallery.addEventListener('click', () => {
+galleryOn = !galleryOn                                                                  ;
+const table = document.querySelector('.files-card table')                              ;
+const gallery = document.getElementById('gallery')                                     ;
+if (galleryOn) { buildGallery(); gallery.classList.add('on'); if (table) table.style.display = 'none'; btnGallery.textContent = '☰ List'; }
+else { gallery.classList.remove('on'); if (table) table.style.display = ''; btnGallery.textContent = '▦ Gallery'; }
+})                                                                                      ;
+
+(function () {
+const el = document.getElementById('stats')                                           ;
+if (!el) return                                                                        ;
+fetch('/__stats').then(r => r.ok ? r.json() : null).then(s => {
+if (!s) return                                                                         ;
+el.textContent = '↑ ' + s.uploads + ' files (' + formatBytes(s.uploadBytes) + ') · ↓ ' + s.downloads + ' files (' + formatBytes(s.downloadBytes) + ') this session';
+}).catch(() => {})                                                                      ;
+})()                                                                                    ;
+
 document.addEventListener('DOMContentLoaded', () => {
 fileRows = [...document.querySelectorAll('#files-tbody tr[data-name]')].map(row => ({
 row,
@@ -496,10 +793,20 @@ val encodedCurrent = FileUtils.encodePathSegments(currentPath)
 val uploadEndpoint = "/upload" + if (encodedCurrent.isBlank()) "/" else "/$encodedCurrent"
 val pasteEndpoint = "/paste" + if (encodedCurrent.isBlank()) "/" else "/$encodedCurrent"
 val zipEndpoint = "/zip" + if (encodedCurrent.isBlank()) "/" else "/$encodedCurrent"
+val deleteEndpoint = "/delete" + if (encodedCurrent.isBlank()) "/" else "/$encodedCurrent"
+val renameEndpoint = "/rename" + if (encodedCurrent.isBlank()) "/" else "/$encodedCurrent"
+val mkdirEndpoint = "/mkdir" + if (encodedCurrent.isBlank()) "/" else "/$encodedCurrent"
+val moveEndpoint = "/move" + if (encodedCurrent.isBlank()) "/" else "/$encodedCurrent"
+val shareEndpoint = "/__share" + if (encodedCurrent.isBlank()) "/" else "/$encodedCurrent"
 val js = jsTemplate
 .replace("__UPLOAD__", uploadEndpoint)
 .replace("__PASTE__", pasteEndpoint)
 .replace("__ZIP__", zipEndpoint)
+.replace("__DELETE__", deleteEndpoint)
+.replace("__RENAME__", renameEndpoint)
+.replace("__MKDIR__", mkdirEndpoint)
+.replace("__MOVE__", moveEndpoint)
+.replace("__SHARE__", shareEndpoint)
 .replace("__CURPATH__", encodedCurrent)
 
 return """
@@ -525,6 +832,11 @@ return """
 <span class="upload-icon">⬆️</span>
 <p class="upload-label"><strong>Click to upload</strong> or drag &amp                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ; drop</p>
 <p class="upload-label" style="margin-top:0.25rem;font-size:0.75rem;">Saves to this folder</p>
+</div>
+<div style="display:flex;gap:0.5rem;margin-bottom:1rem;">
+<label class="btn" style="cursor:pointer;">📷 Camera
+<input type="file" id="camera-input" accept="image/*,video/*" capture="environment" style="display:none;">
+</label>
 </div>
 <div id="progress-wrap">
 <div id="progress-label">Uploading…</div>
@@ -556,6 +868,9 @@ return """
 <option value="date_desc">Sort: Date newest</option>
 <option value="date_asc">Sort: Date oldest</option>
 </select>
+<button class="btn" id="btn-mkdir">📁 New folder</button>
+<button class="btn" id="btn-search-all">🌐 All folders</button>
+<button class="btn" id="btn-trash">🗑 Trash</button>
 </div>
 </div>
 </div>
@@ -569,21 +884,56 @@ return """
 <div class="files-card">
 <div class="files-header">
 <div class="files-header-left">$selectAllCb<span>Name</span></div>
+<div style="display:flex;gap:0.5rem;align-items:center;">
+<button class="btn" id="btn-gallery" style="padding:0.3rem 0.6rem;font-size:0.7rem;">▦ Gallery</button>
 <span>Size</span>
+</div>
 </div>
 <div class="select-toolbar" id="select-toolbar">
 <span class="sel-count" id="sel-count">0 selected</span>
 <button class="btn btn-zip" id="btn-zip" disabled>⬇️ Download as ZIP</button>
 <button class="btn" id="btn-queue" disabled>📋 Queue download</button>
+<button class="btn" id="btn-rename" disabled>✏️ Rename</button>
+<button class="btn" id="btn-move" disabled>📦 Move</button>
+<button class="btn" id="btn-share" disabled>🔗 Share</button>
+<button class="btn btn-danger" id="btn-delete" disabled>🗑️ Delete</button>
 </div>
 $tableOrEmpty
+<div class="gallery" id="gallery"></div>
 </div>
+<div class="hint" id="stats" style="text-align:center;margin-top:1rem;"></div>
 <div class="footer">
 <a class="github-link" href="https://github.com/Mobinshahidi/swap" target="_blank" rel="noopener" aria-label="GitHub">
 <svg viewBox="0 0 24 24" role="img" aria-hidden="true">
 <path fill="currentColor" d="M12,0.296c-6.63,0 -12,5.373 -12,12 0,5.303 3.438,9.8 8.205,11.387 0.6,0.111 0.82,-0.261 0.82,-0.577 0,-0.285 -0.01,-1.04 -0.015,-2.04 -3.338,0.724 -4.042,-1.61 -4.042,-1.61 -0.546,-1.387 -1.333,-1.756 -1.333,-1.756 -1.089,-0.745 0.083,-0.729 0.083,-0.729 1.205,0.084 1.84,1.236 1.84,1.236 1.07,1.834 2.809,1.304 3.495,0.997 0.108,-0.776 0.418,-1.304 0.762,-1.604 -2.665,-0.304 -5.466,-1.332 -5.466,-5.93 0,-1.31 0.469,-2.381 1.235,-3.221 -0.135,-0.303 -0.54,-1.523 0.105,-3.176 0,0 1.005,-0.322 3.3,1.23 0.96,-0.267 1.98,-0.399 3,-0.405 1.02,0.006 2.04,0.138 3,0.405 2.28,-1.552 3.285,-1.23 3.285,-1.23 0.645,1.653 0.24,2.873 0.12,3.176 0.765,0.84 1.23,1.911 1.23,3.221 0,4.61 -2.805,5.625 -5.475,5.921 0.435,0.375 0.81,1.11 0.81,2.22 0,1.606 -0.015,2.896 -0.015,3.286 0,0.315 0.21,0.69 0.825,0.57C20.565,22.092 24,17.592 24,12.296 24,5.669 18.627,0.296 12,0.296z" />
 </svg>
 </a>
+</div>
+</div>
+<div class="modal-overlay" id="trash-modal">
+<div class="preview-box">
+<div class="preview-head">
+<span class="preview-title">🗑 Trash</span>
+<span class="preview-actions">
+<button class="btn" id="trash-restore">↩ Restore</button>
+<button class="btn btn-danger" id="trash-empty">Empty</button>
+<button class="btn-cancel" id="trash-close">✕</button>
+</span>
+</div>
+<div class="preview-body" id="trash-body"></div>
+</div>
+</div>
+<div class="modal-overlay" id="preview-modal">
+<div class="preview-box">
+<div class="preview-head">
+<span class="preview-title" id="preview-title"></span>
+<span class="preview-actions">
+<button class="btn" id="preview-copy" style="display:none;">📋 Copy</button>
+<a class="btn" id="preview-download">⬇️ Download</a>
+<button class="btn-cancel" id="preview-close">✕</button>
+</span>
+</div>
+<div class="preview-body" id="preview-body"></div>
 </div>
 </div>
 <div class="modal-overlay" id="pw-modal">
@@ -643,7 +993,7 @@ val url = "/$encodedPath"
 if (entry.relativePath in protectedFiles) {
 rows.append("<tr data-name=\"$rowNameAttr\" data-size=\"$rowSizeAttr\" data-modified=\"$rowModifiedAttr\"><td class=\"check\"></td><td class=\"icon\">🔒</td><td><span class=\"locked\" onclick=\"promptPassword('$url','$nameHtml')\">$nameHtml</span></td><td class=\"size\">${FileUtils.formatSize(entry.size)}</td></tr>")
 } else {
-rows.append("<tr data-name=\"$rowNameAttr\" data-size=\"$rowSizeAttr\" data-modified=\"$rowModifiedAttr\"><td class=\"check\"><input type=\"checkbox\" class=\"file-cb\" data-name=\"$nameHtml\"></td><td class=\"icon\">${FileUtils.iconFor(entry.name)}</td><td><a href=\"$url\" download=\"$nameHtml\">$nameHtml</a></td><td class=\"size\">${FileUtils.formatSize(entry.size)}</td></tr>")
+rows.append("<tr data-name=\"$rowNameAttr\" data-size=\"$rowSizeAttr\" data-modified=\"$rowModifiedAttr\"><td class=\"check\"><input type=\"checkbox\" class=\"file-cb\" data-name=\"$nameHtml\"></td><td class=\"icon\">${FileUtils.iconFor(entry.name)}</td><td><a href=\"$url\" class=\"file-link\" data-name=\"$rowNameAttr\" download=\"$nameHtml\">$nameHtml</a></td><td class=\"size\">${FileUtils.formatSize(entry.size)}</td></tr>")
 }
 }
 }
