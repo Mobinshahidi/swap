@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg_main">#C3C2B7</color>
-    <color name="surface">#C3C2B7</color>
-    <color name="border">#8F8D80</color>
+    <color name="bg_main">#F9F1EC</color>
+    <color name="surface">#F9F1EC</color>
+    <color name="border">#E0C9BD</color>
     <color name="text_primary">#1E1E1D</color>
-    <color name="text_muted">#8F8D80</color>
+    <color name="text_muted">#8F7364</color>
     <color name="accent">#D57455</color>
     <color name="accent_deep">#A85536</color>
     <color name="accent_light">#F0D9CD</color>
     <color name="action_restart">#A85536</color>
     <color name="action_stop">#C1503F</color>
-    <color name="action_folder">#8F8D80</color>
+    <color name="action_folder">#8F7364</color>
     <color name="status_running">#4A8A63</color>
     <color name="status_stopped">#C1503F</color>
     <color name="white">#FFFFFF</color>

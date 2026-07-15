@@ -9,10 +9,10 @@ object HtmlRenderer {
 private val css = """
 *, *::before, *::after { box-sizing: border-box                          ; margin: 0; padding: 0; }
 :root {
---bg:                                                                    #c3c2b7; --surface: #c3c2b7; --border: #8f8d80;
---text:                                                                  #1e1e1d; --muted: #8f8d80; --accent: #d57455;
+--bg:                                                                    #f9f1ec; --surface: #f9f1ec; --border: #e0c9bd;
+--text:                                                                  #1e1e1d; --muted: #8f7364; --accent: #d57455;
 --accent-deep:                                                           #a85536; --accent-light: #f0d9cd; --danger: #c1503f; --success: #4a8a63;
---input-bg:                                                              #f7f4ef;
+--input-bg:                                                              #fffdfb;
 --radius: 10px                                                           ;
 --mono: ui-monospace, 'Menlo', 'Cascadia Code', monospace                ;
 --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif        ;
@@ -190,7 +190,7 @@ const CURRENT_PATH = '__CURPATH__';
 
 const THEME_KEY = 'swapTheme'                                                          ;
 const THEME_PRESETS = {
-light: { bg: '#c3c2b7', surface: '#c3c2b7', border: '#8f8d80', text: '#1e1e1d', muted: '#8f8d80', accent: '#d57455', accentDeep: '#a85536', accentLight: '#f0d9cd', inputBg: '#f7f4ef' },
+light: { bg: '#f9f1ec', surface: '#f9f1ec', border: '#e0c9bd', text: '#1e1e1d', muted: '#8f7364', accent: '#d57455', accentDeep: '#a85536', accentLight: '#f0d9cd', inputBg: '#fffdfb' },
 dark: { bg: '#1e1e1d', surface: '#1e1e1d', border: '#3a3a37', text: '#f7f4ef', muted: '#c3c2b7', accent: '#d57455', accentDeep: '#f0d9cd', accentLight: '#453029', inputBg: '#2a2a28' }
 };
 function themeHexToRgb(h) {
@@ -750,7 +750,7 @@ return themeRgbToHex(p.r, p.g, p.b)                                             
 function syncThemeInputs() {
 try {
 const s = JSON.parse(localStorage.getItem(THEME_KEY) || 'null')                        ;
-const v = (s && s.mode === 'custom') ? s : { accent: '#d57455', bg: '#c3c2b7', text: '#1e1e1d' };
+const v = (s && s.mode === 'custom') ? s : { accent: '#d57455', bg: '#f9f1ec', text: '#1e1e1d' };
 [['accent', v.accent], ['bg', v.bg], ['text', v.text]].forEach(([k, val]) => {
 document.getElementById('tc-' + k).value = val                                         ;
 document.getElementById('tx-' + k).value = val                                         ;
@@ -1035,7 +1035,7 @@ $tableOrEmpty
 <input type="color" id="tc-accent" value="#d57455"><input type="text" class="theme-hex" id="tx-accent" value="#d57455">
 </span></div>
 <div class="theme-row"><span>Background</span><span style="display:flex;gap:0.4rem;align-items:center;">
-<input type="color" id="tc-bg" value="#c3c2b7"><input type="text" class="theme-hex" id="tx-bg" value="#c3c2b7">
+<input type="color" id="tc-bg" value="#f9f1ec"><input type="text" class="theme-hex" id="tx-bg" value="#f9f1ec">
 </span></div>
 <div class="theme-row"><span>Text</span><span style="display:flex;gap:0.4rem;align-items:center;">
 <input type="color" id="tc-text" value="#1e1e1d"><input type="text" class="theme-hex" id="tx-text" value="#1e1e1d">

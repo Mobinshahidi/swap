@@ -10,7 +10,7 @@ import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 object QrCodeGenerator {
     // Default QR colors follow the warm app palette instead of stark black/white.
     private const val DEFAULT_INK = 0xFF1E1E1D.toInt()
-    private const val DEFAULT_PAPER = 0xFFC3C2B7.toInt()
+    private const val DEFAULT_PAPER = 0xFFF9F1EC.toInt()
 
     fun render(
         content: String,
