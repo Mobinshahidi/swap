@@ -104,7 +104,7 @@ GET (403). Restore moves an item back; emptying hard-deletes and purges password
 - **Trash + restore**: delete is undoable; the "🗑 Trash" modal restores or empties.
 - **Share links**: the "🔗 Share" button copies an expiring/one-time `/s/<token>` URL that needs no password.
 - **Copy**: text previews have a Copy button (`navigator.clipboard` with an `execCommand` fallback for plain-HTTP LAN).
-- **Theme**: default warm palette (`#c3c2b7` bg / `#1e1e1d` text / `#d57455` accent). The web UI has a "🎨 Theme" modal with Light/Dark presets plus custom accent/bg/text pickers (hex input, derived surface/border/muted), persisted per-browser in localStorage. The native app accepts the same three hex colors in Settings (prefs → `AppTheme`).
+- **Theme**: default warm palette — bg `#f5f2ec` (off-white), surface `#c3c2b7` (greige cards), accent `#d57455` with deep `#a8583d` (hover) and light `#e8a488` (tints), text `#1e1e1d`, muted `#6b6a63`. The web UI has a "🎨 Theme" modal with Light/Dark presets plus custom accent/bg/text pickers (hex input; surface/border/muted/deep derived by luminance), persisted per-browser in localStorage. The native app accepts the same three hex colors in Settings (prefs → `AppTheme`). The QR code renders ink-on-off-white in theme colors (with a scannability guard), not black-on-white.
 - **Camera upload** (in the tools row), and a session **transfer-stats** line in the footer.
 
 ### App (native) features

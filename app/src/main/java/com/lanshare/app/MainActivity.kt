@@ -187,7 +187,11 @@ class MainActivity : Activity() {
 			return
 		}
 		val px = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 200f, resources.displayMetrics).toInt()
-		runCatching { QrCodeGenerator.render(content, px) }
+		val ink = AppTheme.parse(prefs.getString(AppPrefs.KEY_THEME_TEXT, null))
+			?: resources.getColor(R.color.text_primary, theme)
+		val paper = AppTheme.parse(prefs.getString(AppPrefs.KEY_THEME_BG, null))
+			?: resources.getColor(R.color.bg_main, theme)
+		runCatching { QrCodeGenerator.render(content, px, ink, paper) }
 			.onSuccess { qrImage.setImageBitmap(it) }
 			.onFailure { qrImage.setImageBitmap(null) }
 	}

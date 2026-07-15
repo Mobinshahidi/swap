@@ -9,9 +9,9 @@ object HtmlRenderer {
 private val css = """
 *, *::before, *::after { box-sizing: border-box                          ; margin: 0; padding: 0; }
 :root {
---bg:                                                                    #c3c2b7; --surface: #cfcec4; --border: #b2b1a6;
---text:                                                                  #1e1e1d; --muted: #6f6e66; --accent: #d57455;
---accent-light:                                                          #e9dcd4; --danger: #c1503f; --success: #4a8a63;
+--bg:                                                                    #f5f2ec; --surface: #c3c2b7; --border: #a9a89d;
+--text:                                                                  #1e1e1d; --muted: #6b6a63; --accent: #d57455;
+--accent-deep:                                                           #a8583d; --accent-light: #e8a488; --danger: #c1503f; --success: #4a8a63;
 --radius: 10px                                                           ;
 --mono: ui-monospace, 'Menlo', 'Cascadia Code', monospace                ;
 --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif        ;
@@ -22,8 +22,8 @@ font-weight: 300                                                         ; min-h
 .tools-card { background: var(--surface)                                 ; border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 1rem; overflow: hidden; }
 .tools-body { padding: 0.9rem 1.25rem                                    ; }
 .top-tools { display: flex                                               ; gap: 0.5rem; flex-wrap: wrap; }
-.tool-input { flex: 1                                                    ; min-width: 170px; border: 1px solid var(--border); border-radius: 8px; padding: 0.55rem 0.75rem; font-family: var(--mono); font-size: 0.82rem; background: var(--surface); color: var(--text); outline: none; }
-.tool-select { border: 1px solid var(--border)                           ; border-radius: 8px; padding: 0.55rem 0.65rem; font-family: var(--mono); font-size: 0.82rem; background: var(--surface); color: var(--text); }
+.tool-input { flex: 1                                                    ; min-width: 170px; border: 1px solid var(--border); border-radius: 8px; padding: 0.55rem 0.75rem; font-family: var(--mono); font-size: 0.82rem; background: var(--bg); color: var(--text); outline: none; }
+.tool-select { border: 1px solid var(--border)                           ; border-radius: 8px; padding: 0.55rem 0.65rem; font-family: var(--mono); font-size: 0.82rem; background: var(--bg); color: var(--text); }
 header { margin-bottom: 2rem                                             ; padding-bottom: 1.25rem; border-bottom: 1px solid var(--border); }
 .breadcrumb { font-family: var(--mono)                                   ; font-size: 0.82rem; color: var(--muted);
 margin-bottom: 0.5rem                                                    ; display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; }
@@ -70,7 +70,9 @@ color: var(--text)                                                       ; backg
 .btn { background: var(--accent)                                         ; color: white; border: none; border-radius: 6px;
 padding: 0.5rem 1.1rem                                                   ; font-family: var(--mono); font-size: 0.82rem;
 cursor: pointer                                                          ; white-space: nowrap; transition: opacity 0.15s; }
-.btn:hover { opacity: 0.85                                               ; }
+.btn:hover { background: var(--accent-deep)                              ; }
+.btn-success:hover, .btn-zip:hover { background: var(--success)          ; opacity: 0.85; }
+.btn-danger:hover { background: var(--danger)                            ; opacity: 0.85; }
 .btn:disabled { opacity: 0.45                                            ; cursor: not-allowed; }
 .btn-success { background: var(--success)                                ; }
 .btn-danger { background: var(--danger)                                  ; }
@@ -187,8 +189,8 @@ const CURRENT_PATH = '__CURPATH__';
 
 const THEME_KEY = 'swapTheme'                                                          ;
 const THEME_PRESETS = {
-light: { bg: '#c3c2b7', surface: '#cfcec4', border: '#b2b1a6', text: '#1e1e1d', muted: '#6f6e66', accent: '#d57455', accentLight: '#e9dcd4' },
-dark: { bg: '#1e1e1d', surface: '#2a2a28', border: '#3a3a37', text: '#c3c2b7', muted: '#8f8e85', accent: '#d57455', accentLight: '#453029' }
+light: { bg: '#f5f2ec', surface: '#c3c2b7', border: '#a9a89d', text: '#1e1e1d', muted: '#6b6a63', accent: '#d57455', accentDeep: '#a8583d', accentLight: '#e8a488' },
+dark: { bg: '#1e1e1d', surface: '#2a2a28', border: '#3a3a37', text: '#f5f2ec', muted: '#8f8e85', accent: '#d57455', accentDeep: '#e8a488', accentLight: '#453029' }
 };
 function themeHexToRgb(h) {
 h = (h || '').replace('#', '')                                                          ;
@@ -207,14 +209,15 @@ const t = amt > 0 ? 255 : 0; const a = Math.abs(amt)                            
 return themeRgbToHex(p.r + (t - p.r) * a, p.g + (t - p.g) * a, p.b + (t - p.b) * a)     ;
 }
 function themeFromColors(accent, bg, text) {
-const p = themeHexToRgb(bg) || { r: 195, g: 194, b: 183 }                               ;
+const p = themeHexToRgb(bg) || { r: 245, g: 242, b: 236 }                               ;
 const dark = (0.299 * p.r + 0.587 * p.g + 0.114 * p.b) < 128                            ;
 return {
 bg, text, accent,
-surface: themeMix(bg, 0.07),
-border: themeMix(bg, dark ? 0.16 : -0.12),
+surface: themeMix(bg, dark ? 0.07 : -0.15),
+border: themeMix(bg, dark ? 0.16 : -0.28),
 muted: themeMix(text, dark ? -0.3 : 0.35),
-accentLight: themeMix(accent, dark ? -0.55 : 0.6)
+accentDeep: themeMix(accent, dark ? 0.3 : -0.25),
+accentLight: themeMix(accent, dark ? -0.55 : 0.35)
 };
 }
 function applyThemeVars(v) {
@@ -222,6 +225,7 @@ const r = document.documentElement.style                                        
 r.setProperty('--bg', v.bg); r.setProperty('--surface', v.surface)                      ;
 r.setProperty('--border', v.border); r.setProperty('--text', v.text)                    ;
 r.setProperty('--muted', v.muted); r.setProperty('--accent', v.accent)                  ;
+r.setProperty('--accent-deep', v.accentDeep)                                            ;
 r.setProperty('--accent-light', v.accentLight)                                          ;
 }
 function loadTheme() {
@@ -743,7 +747,7 @@ return themeRgbToHex(p.r, p.g, p.b)                                             
 function syncThemeInputs() {
 try {
 const s = JSON.parse(localStorage.getItem(THEME_KEY) || 'null')                        ;
-const v = (s && s.mode === 'custom') ? s : { accent: '#d57455', bg: '#c3c2b7', text: '#1e1e1d' };
+const v = (s && s.mode === 'custom') ? s : { accent: '#d57455', bg: '#f5f2ec', text: '#1e1e1d' };
 [['accent', v.accent], ['bg', v.bg], ['text', v.text]].forEach(([k, val]) => {
 document.getElementById('tc-' + k).value = val                                         ;
 document.getElementById('tx-' + k).value = val                                         ;
@@ -1028,7 +1032,7 @@ $tableOrEmpty
 <input type="color" id="tc-accent" value="#d57455"><input type="text" class="theme-hex" id="tx-accent" value="#d57455">
 </span></div>
 <div class="theme-row"><span>Background</span><span style="display:flex;gap:0.4rem;align-items:center;">
-<input type="color" id="tc-bg" value="#c3c2b7"><input type="text" class="theme-hex" id="tx-bg" value="#c3c2b7">
+<input type="color" id="tc-bg" value="#f5f2ec"><input type="text" class="theme-hex" id="tx-bg" value="#f5f2ec">
 </span></div>
 <div class="theme-row"><span>Text</span><span style="display:flex;gap:0.4rem;align-items:center;">
 <input type="color" id="tc-text" value="#1e1e1d"><input type="text" class="theme-hex" id="tx-text" value="#1e1e1d">

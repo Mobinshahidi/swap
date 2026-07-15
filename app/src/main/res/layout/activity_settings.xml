@@ -166,7 +166,7 @@
                 android:layout_marginTop="8dp"
                 android:background="@drawable/bg_edittext"
                 android:fontFamily="@font/jetbrains_mono_regular"
-                android:hint="Background (#c3c2b7)"
+                android:hint="Background (#f5f2ec)"
                 android:inputType="text"
                 android:maxLines="1"
                 android:textColor="@color/text_primary"
