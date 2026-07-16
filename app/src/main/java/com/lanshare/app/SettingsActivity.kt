@@ -75,6 +75,15 @@ class SettingsActivity : Activity() {
 			startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Mobinshahidi/swap")))
 		}
 
+		// Same presets as the web UI's theme modal.
+		findViewById<Button>(R.id.btnThemeLight).setOnClickListener {
+			applyPreset("#d57455", "#f9f1ec", "#1e1e1d", "Light theme applied")
+		}
+
+		findViewById<Button>(R.id.btnThemeDark).setOnClickListener {
+			applyPreset("#d57455", "#1e1e1d", "#f7f4ef", "Dark theme applied")
+		}
+
 		findViewById<Button>(R.id.btnThemeApply).setOnClickListener {
 			val accent = findViewById<EditText>(R.id.etThemeAccent).text.toString().trim()
 			val bg = findViewById<EditText>(R.id.etThemeBg).text.toString().trim()
@@ -107,6 +116,16 @@ class SettingsActivity : Activity() {
 		}
 
 		AppTheme.apply(this)
+	}
+
+	private fun applyPreset(accent: String, bg: String, text: String, msg: String) {
+		prefs.edit()
+			.putString(AppPrefs.KEY_THEME_ACCENT, accent)
+			.putString(AppPrefs.KEY_THEME_BG, bg)
+			.putString(AppPrefs.KEY_THEME_TEXT, text)
+			.apply()
+		toast(msg)
+		recreate()
 	}
 
 	// Persist port + auth whenever the user leaves settings; the main screen's
