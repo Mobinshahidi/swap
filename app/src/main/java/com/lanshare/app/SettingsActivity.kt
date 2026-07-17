@@ -75,9 +75,17 @@ class SettingsActivity : Activity() {
 			startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Mobinshahidi/swap")))
 		}
 
-		// Same presets as the web UI's theme modal.
+		// Same presets as the web UI's theme modal. Light IS the default XML
+		// palette, so it clears the overrides instead of re-deriving them —
+		// that keeps "default" and "light" pixel-identical.
 		findViewById<Button>(R.id.btnThemeLight).setOnClickListener {
-			applyPreset("#d57455", "#f9f1ec", "#1e1e1d", "Light theme applied")
+			prefs.edit()
+				.remove(AppPrefs.KEY_THEME_ACCENT)
+				.remove(AppPrefs.KEY_THEME_BG)
+				.remove(AppPrefs.KEY_THEME_TEXT)
+				.apply()
+			toast("Light theme applied")
+			recreate()
 		}
 
 		findViewById<Button>(R.id.btnThemeDark).setOnClickListener {

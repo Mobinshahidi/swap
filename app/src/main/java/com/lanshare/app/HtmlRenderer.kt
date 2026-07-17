@@ -12,7 +12,7 @@ private val css = """
 --bg:                                                                    #f9f1ec; --surface: #f9f1ec; --border: #e0c9bd;
 --text:                                                                  #1e1e1d; --muted: #8f7364; --accent: #d57455;
 --accent-deep:                                                           #a85536; --accent-light: #f0d9cd; --danger: #c1503f; --success: #4a8a63;
---input-bg:                                                              #fffdfb;
+--input-bg:                                                              #f9f1ec;
 --radius: 10px                                                           ;
 --mono: ui-monospace, 'Menlo', 'Cascadia Code', monospace                ;
 --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif        ;
@@ -23,6 +23,7 @@ font-weight: 300                                                         ; min-h
 .tools-card { background: var(--surface)                                 ; border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 1rem; overflow: hidden; }
 .tools-body { padding: 0.9rem 1.25rem                                    ; }
 .top-tools { display: flex                                               ; gap: 0.5rem; flex-wrap: wrap; }
+.tool-buttons { display: flex                                            ; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px solid var(--border); }
 .tool-input { flex: 1                                                    ; min-width: 170px; border: 1px solid var(--border); border-radius: 8px; padding: 0.55rem 0.75rem; font-family: var(--mono); font-size: 0.82rem; background: var(--input-bg); color: var(--text); outline: none; }
 .tool-select { border: 1px solid var(--border)                           ; border-radius: 8px; padding: 0.55rem 0.65rem; font-family: var(--mono); font-size: 0.82rem; background: var(--input-bg); color: var(--text); }
 header { margin-bottom: 2rem                                             ; padding-bottom: 1.25rem; border-bottom: 1px solid var(--border); }
@@ -173,7 +174,7 @@ td.size { width: 5.2rem                                                  ; }
 body { padding: 1rem 0.5rem                                              ; }
 td { padding: 0.55rem 0.5rem                                             ; font-size: 0.82rem; }
 td.size { width: 4.4rem                                                  ; font-size: 0.7rem; }
-.tools-card .top-tools .btn { font-size: 0.72rem                         ; padding: 0.45rem 0.7rem; }
+.tools-card .top-tools .btn, .tools-card .tool-buttons .btn { font-size: 0.72rem; padding: 0.45rem 0.7rem; }
 }
 """.trimIndent()
 
@@ -190,8 +191,8 @@ const CURRENT_PATH = '__CURPATH__';
 
 const THEME_KEY = 'swapTheme'                                                          ;
 const THEME_PRESETS = {
-light: { bg: '#f9f1ec', surface: '#f9f1ec', border: '#e0c9bd', text: '#1e1e1d', muted: '#8f7364', accent: '#d57455', accentDeep: '#a85536', accentLight: '#f0d9cd', inputBg: '#fffdfb' },
-dark: { bg: '#1e1e1d', surface: '#1e1e1d', border: '#3a3a37', text: '#f7f4ef', muted: '#c3c2b7', accent: '#d57455', accentDeep: '#f0d9cd', accentLight: '#453029', inputBg: '#2a2a28' }
+light: { bg: '#f9f1ec', surface: '#f9f1ec', border: '#e0c9bd', text: '#1e1e1d', muted: '#8f7364', accent: '#d57455', accentDeep: '#a85536', accentLight: '#f0d9cd', inputBg: '#f9f1ec' },
+dark: { bg: '#1e1e1d', surface: '#1e1e1d', border: '#474641', text: '#f7f4ef', muted: '#c3c2b7', accent: '#d57455', accentDeep: '#f0d9cd', accentLight: '#453029', inputBg: '#2a2a28' }
 };
 function themeHexToRgb(h) {
 h = (h || '').replace('#', '')                                                          ;
@@ -236,7 +237,6 @@ try {
 const s = JSON.parse(localStorage.getItem(THEME_KEY) || 'null')                         ;
 if (!s) return                                                                          ;
 if (s.mode === 'dark') applyThemeVars(THEME_PRESETS.dark)                               ;
-else if (s.mode === 'light') applyThemeVars(THEME_PRESETS.light)                        ;
 else if (s.mode === 'custom') applyThemeVars(themeFromColors(s.accent, s.bg, s.text))   ;
 } catch (e) {}
 }
@@ -747,10 +747,17 @@ h = (h || '').trim(); if (h && !h.startsWith('#')) h = '#' + h                  
 const p = themeHexToRgb(h); if (!p) return null                                        ;
 return themeRgbToHex(p.r, p.g, p.b)                                                    ;
 }
+function clearThemeVars() {
+const r = document.documentElement.style                                                ;
+['--bg', '--surface', '--border', '--text', '--muted', '--accent', '--accent-deep', '--accent-light', '--input-bg']
+.forEach(k => r.removeProperty(k))                                                      ;
+}
 function syncThemeInputs() {
 try {
 const s = JSON.parse(localStorage.getItem(THEME_KEY) || 'null')                        ;
-const v = (s && s.mode === 'custom') ? s : { accent: '#d57455', bg: '#f9f1ec', text: '#1e1e1d' };
+let v = THEME_PRESETS.light                                                             ;
+if (s && s.mode === 'custom') v = s                                                     ;
+else if (s && s.mode === 'dark') v = THEME_PRESETS.dark                                 ;
 [['accent', v.accent], ['bg', v.bg], ['text', v.text]].forEach(([k, val]) => {
 document.getElementById('tc-' + k).value = val                                         ;
 document.getElementById('tx-' + k).value = val                                         ;
@@ -774,16 +781,17 @@ applyThemeVars(themeFromColors(accent, bg, text))                               
 showToast('Theme applied ✓')                                                            ;
 })                                                                                      ;
 document.getElementById('theme-light').addEventListener('click', () => {
+// Light IS the stylesheet default — drop every override so it matches exactly.
 localStorage.setItem(THEME_KEY, JSON.stringify({ mode: 'light' }))                      ;
-applyThemeVars(THEME_PRESETS.light); showToast('Light theme ✓')                         ;
+clearThemeVars(); syncThemeInputs(); showToast('Light theme ✓')                         ;
 })                                                                                      ;
 document.getElementById('theme-dark').addEventListener('click', () => {
 localStorage.setItem(THEME_KEY, JSON.stringify({ mode: 'dark' }))                       ;
-applyThemeVars(THEME_PRESETS.dark); showToast('Dark theme ✓')                           ;
+applyThemeVars(THEME_PRESETS.dark); syncThemeInputs(); showToast('Dark theme ✓')        ;
 })                                                                                      ;
 document.getElementById('theme-reset').addEventListener('click', () => {
 localStorage.removeItem(THEME_KEY)                                                      ;
-applyThemeVars(THEME_PRESETS.light); syncThemeInputs(); showToast('Theme reset ✓')      ;
+clearThemeVars(); syncThemeInputs(); showToast('Theme reset ✓')                         ;
 })                                                                                      ;
 
 const trashModal = document.getElementById('trash-modal')                             ;
@@ -969,6 +977,7 @@ return """
 <div class="tools-body">
 <div class="top-tools">
 <input class="tool-input" id="search-input" placeholder="Search files and folders" />
+<button class="btn" id="btn-search-all">🌐 All folders</button>
 <select class="tool-select" id="sort-select">
 <option value="name_asc">Sort: Name A-Z</option>
 <option value="name_desc">Sort: Name Z-A</option>
@@ -977,8 +986,9 @@ return """
 <option value="date_desc">Sort: Date newest</option>
 <option value="date_asc">Sort: Date oldest</option>
 </select>
+</div>
+<div class="tool-buttons">
 <button class="btn" id="btn-mkdir">📁 New folder</button>
-<button class="btn" id="btn-search-all">🌐 All folders</button>
 <button class="btn" id="btn-trash">🗑 Trash</button>
 <label class="btn" style="cursor:pointer;">📷 Camera
 <input type="file" id="camera-input" accept="image/*,video/*" capture="environment" style="display:none;">
