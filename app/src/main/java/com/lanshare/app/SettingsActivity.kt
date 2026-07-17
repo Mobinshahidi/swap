@@ -92,22 +92,35 @@ class SettingsActivity : Activity() {
 			applyPreset("#d57455", "#1e1e1d", "#f7f4ef", "Dark theme applied")
 		}
 
+		// Mirrors the web Apply: normalize the hex values, persist them, and
+		// repaint this screen in place — no activity recreation involved.
 		findViewById<Button>(R.id.btnThemeApply).setOnClickListener {
-			val accent = findViewById<EditText>(R.id.etThemeAccent).text.toString().trim()
-			val bg = findViewById<EditText>(R.id.etThemeBg).text.toString().trim()
-			val text = findViewById<EditText>(R.id.etThemeText).text.toString().trim()
-			val bad = listOf(accent, bg, text).filter { it.isNotBlank() && AppTheme.parse(it) == null }
-			if (bad.isNotEmpty()) {
-				toast("Invalid color: ${bad.first()}")
+			val rawAccent = findViewById<EditText>(R.id.etThemeAccent).text.toString().trim()
+			val rawBg = findViewById<EditText>(R.id.etThemeBg).text.toString().trim()
+			val rawText = findViewById<EditText>(R.id.etThemeText).text.toString().trim()
+			val bad = listOf(rawAccent, rawBg, rawText).firstOrNull { it.isNotBlank() && AppTheme.normalize(it) == null }
+			if (bad != null) {
+				toast("Invalid color: $bad")
 				return@setOnClickListener
 			}
+			if (rawAccent.isBlank() && rawBg.isBlank() && rawText.isBlank()) {
+				// Nothing entered — behave like Reset (back to the default light).
+				findViewById<Button>(R.id.btnThemeReset).performClick()
+				return@setOnClickListener
+			}
+			val accent = AppTheme.normalize(rawAccent) ?: ""
+			val bg = AppTheme.normalize(rawBg) ?: ""
+			val text = AppTheme.normalize(rawText) ?: ""
 			prefs.edit()
 				.putString(AppPrefs.KEY_THEME_ACCENT, accent)
 				.putString(AppPrefs.KEY_THEME_BG, bg)
 				.putString(AppPrefs.KEY_THEME_TEXT, text)
 				.apply()
+			findViewById<EditText>(R.id.etThemeAccent).setText(accent)
+			findViewById<EditText>(R.id.etThemeBg).setText(bg)
+			findViewById<EditText>(R.id.etThemeText).setText(text)
+			AppTheme.apply(this)
 			toast("Theme applied")
-			recreate()
 		}
 
 		findViewById<Button>(R.id.btnThemeReset).setOnClickListener {
@@ -132,8 +145,11 @@ class SettingsActivity : Activity() {
 			.putString(AppPrefs.KEY_THEME_BG, bg)
 			.putString(AppPrefs.KEY_THEME_TEXT, text)
 			.apply()
+		findViewById<EditText>(R.id.etThemeAccent).setText(accent)
+		findViewById<EditText>(R.id.etThemeBg).setText(bg)
+		findViewById<EditText>(R.id.etThemeText).setText(text)
+		AppTheme.apply(this)
 		toast(msg)
-		recreate()
 	}
 
 	// recreate() restores the OLD screen's view state after onCreate, which

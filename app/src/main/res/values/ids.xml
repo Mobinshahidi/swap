@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- View-tag key: remembers a TextView's original XML text color so
+         AppTheme can re-apply themes in place (idempotently). -->
+    <item name="tag_orig_text_color" type="id" />
+</resources>

@@ -43,10 +43,17 @@ object AppTheme {
 	}
 
 	fun parse(raw: String?): Int? {
-		val t = raw?.trim().orEmpty()
+		var t = raw?.trim()?.removePrefix("#") ?: return null
 		if (t.isEmpty()) return null
-		val hex = if (t.startsWith("#")) t else "#$t"
-		return runCatching { Color.parseColor(hex) }.getOrNull()
+		// Expand #abc shorthand — Color.parseColor only accepts 6/8 digits.
+		if (t.length == 3) t = t.map { "$it$it" }.joinToString("")
+		return runCatching { Color.parseColor("#$t") }.getOrNull()
+	}
+
+	// Canonical "#rrggbb" form of a hex string, or null if unparseable.
+	fun normalize(raw: String?): String? {
+		val c = parse(raw) ?: return null
+		return String.format("#%06x", c and 0xFFFFFF)
 	}
 
 	private data class Palette(
@@ -74,9 +81,15 @@ object AppTheme {
 					if (p.text != null) v.setTextColor(p.text)
 					if (p.muted != null) v.setHintTextColor(p.muted)
 				}
-				v is TextView -> when (v.currentTextColor) {
-					p.xmlPrimary -> if (p.text != null) v.setTextColor(p.text)
-					p.xmlMuted -> if (p.muted != null) v.setTextColor(p.muted)
+				v is TextView -> {
+					// Remap by the ORIGINAL XML color (remembered in a tag), so
+					// applying a second theme in place still finds its targets.
+					val orig = v.getTag(R.id.tag_orig_text_color) as? Int
+						?: v.currentTextColor.also { v.setTag(R.id.tag_orig_text_color, it) }
+					when (orig) {
+						p.xmlPrimary -> if (p.text != null) v.setTextColor(p.text)
+						p.xmlMuted -> if (p.muted != null) v.setTextColor(p.muted)
+					}
 				}
 			}
 		}
