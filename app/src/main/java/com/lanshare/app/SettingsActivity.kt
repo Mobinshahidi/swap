@@ -136,6 +136,17 @@ class SettingsActivity : Activity() {
 		recreate()
 	}
 
+	// recreate() restores the OLD screen's view state after onCreate, which
+	// would stuff the previous theme's hex values back into the fields — the
+	// next Apply would then silently revert the theme. Prefs are authoritative
+	// for these three fields, so force them back after restoration.
+	override fun onRestoreInstanceState(savedInstanceState: Bundle) {
+		super.onRestoreInstanceState(savedInstanceState)
+		findViewById<EditText>(R.id.etThemeAccent).setText(prefs.getString(AppPrefs.KEY_THEME_ACCENT, "") ?: "")
+		findViewById<EditText>(R.id.etThemeBg).setText(prefs.getString(AppPrefs.KEY_THEME_BG, "") ?: "")
+		findViewById<EditText>(R.id.etThemeText).setText(prefs.getString(AppPrefs.KEY_THEME_TEXT, "") ?: "")
+	}
+
 	// Persist port + auth whenever the user leaves settings; the main screen's
 	// Start/Restart reads these prefs.
 	override fun onPause() {
