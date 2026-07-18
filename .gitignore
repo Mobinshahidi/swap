@@ -28,3 +28,5 @@ captures/
 .cxx/
 externalNativeBuild/
 fdroid-metadata-com.swap.app.yml
+swap-release.jks
+keystore.base64.txt
