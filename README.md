@@ -40,14 +40,20 @@ If you publish GitHub Releases, you can also attach `swap-release.apk` there for
 
 ## Screenshots
 
-Screenshots live in `fastlane/metadata/android/en-US/images/phoneScreenshots/`
-(picked up automatically by the F-Droid build). Add real device captures there
-as `1.png`, `2.png`, … and they can be embedded below:
+<p align="center">
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.jpg" alt="Swap screenshot 1" width="240">
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2.jpg" alt="Swap screenshot 2" width="240">
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3.jpg" alt="Swap screenshot 3" width="240">
+</p>
+<p align="center">
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/4.jpg" alt="Swap screenshot 4" width="240">
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/5.jpg" alt="Swap screenshot 5" width="240">
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/6.jpg" alt="Swap screenshot 6" width="240">
+</p>
 
-<!--
-![Main screen](fastlane/metadata/android/en-US/images/phoneScreenshots/1.png)
-![Web file manager](fastlane/metadata/android/en-US/images/phoneScreenshots/2.png)
--->
+The same images double as the F-Droid listing screenshots — they are read
+automatically from `fastlane/metadata/android/en-US/images/phoneScreenshots/`
+(`1.jpg`, `2.jpg`, … in listing order).
 
 ---
 

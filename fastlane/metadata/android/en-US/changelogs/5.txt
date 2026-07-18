@@ -1,0 +1,24 @@
+Swap 1.1.0
+
+New file tools (web UI):
+- Recursive "all folders" search across the whole shared tree
+- Thumbnails + gallery grid view for images and videos
+- In-browser preview for images, video, audio, PDF, and text (with seeking)
+- Copy text-file contents to clipboard
+- Camera capture upload
+- New folder, rename, and move
+- Trash with restore / empty (delete is now undoable)
+- Expiring / one-time share links that work without the file password
+- Session transfer stats
+
+Reachability:
+- mDNS: open the share at http://swap.local:<port> (no IP needed)
+
+App + theming:
+- New Settings screen (port, auth, folder, hotspot, update check, GitHub, theme)
+- Warm theme with Light and Dark presets plus a custom color picker (web and app)
+- "Check for updates" against GitHub releases
+
+Performance:
+- Sub-second LAN loads: wake/Wi-Fi locks, HTTP keep-alive, buffered writes,
+  single-cursor folder listing
